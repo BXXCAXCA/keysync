@@ -27,6 +27,12 @@ pub fn run() {
             commands::sync::webdav_test_connection,
             commands::sync::webdav_upload_local_vault,
             commands::sync::webdav_download_remote_vault,
+            commands::sync::webdav_save_config_with_master_password,
+            commands::sync::webdav_load_saved_config_summary,
+            commands::sync::webdav_unlock_saved_config,
+            commands::sync::webdav_test_saved_connection,
+            commands::sync::webdav_upload_local_vault_with_saved_config,
+            commands::sync::webdav_download_remote_vault_with_saved_config,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run KeySync AI");
