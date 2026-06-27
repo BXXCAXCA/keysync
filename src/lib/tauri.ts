@@ -9,6 +9,8 @@ import type {
   TestResult,
   UnifiedChatRequest,
   VaultSecurityProfile,
+  WebDavConfig,
+  WebDavSyncResult,
 } from "../types";
 import { providerTemplates as fallbackTemplates } from "../data/providerTemplates";
 
@@ -95,4 +97,16 @@ export async function vaultDecryptSecretWithMasterPassword(recordId: string, mas
 
 export async function vaultDeleteSecretRecord(recordId: string): Promise<boolean> {
   return await invoke<boolean>("vault_delete_secret_record", { recordId });
+}
+
+export async function webdavTestConnection(config: WebDavConfig): Promise<WebDavSyncResult> {
+  return await invoke<WebDavSyncResult>("webdav_test_connection", { config });
+}
+
+export async function webdavUploadLocalVault(config: WebDavConfig): Promise<WebDavSyncResult> {
+  return await invoke<WebDavSyncResult>("webdav_upload_local_vault", { config });
+}
+
+export async function webdavDownloadRemoteVault(config: WebDavConfig, overwrite: boolean): Promise<WebDavSyncResult> {
+  return await invoke<WebDavSyncResult>("webdav_download_remote_vault", { config, overwrite });
 }
