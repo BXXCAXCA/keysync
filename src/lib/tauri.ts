@@ -10,6 +10,7 @@ import type {
   UnifiedChatRequest,
   VaultSecurityProfile,
   WebDavConfig,
+  WebDavConfigSummary,
   WebDavSyncResult,
 } from "../types";
 import { providerTemplates as fallbackTemplates } from "../data/providerTemplates";
@@ -109,4 +110,28 @@ export async function webdavUploadLocalVault(config: WebDavConfig): Promise<WebD
 
 export async function webdavDownloadRemoteVault(config: WebDavConfig, overwrite: boolean): Promise<WebDavSyncResult> {
   return await invoke<WebDavSyncResult>("webdav_download_remote_vault", { config, overwrite });
+}
+
+export async function webdavSaveConfigWithMasterPassword(config: WebDavConfig, masterPassword: string): Promise<WebDavConfigSummary> {
+  return await invoke<WebDavConfigSummary>("webdav_save_config_with_master_password", { config, masterPassword });
+}
+
+export async function webdavLoadSavedConfigSummary(): Promise<WebDavConfigSummary | null> {
+  return await invoke<WebDavConfigSummary | null>("webdav_load_saved_config_summary");
+}
+
+export async function webdavUnlockSavedConfig(masterPassword: string): Promise<WebDavConfig> {
+  return await invoke<WebDavConfig>("webdav_unlock_saved_config", { masterPassword });
+}
+
+export async function webdavTestSavedConnection(masterPassword: string): Promise<WebDavSyncResult> {
+  return await invoke<WebDavSyncResult>("webdav_test_saved_connection", { masterPassword });
+}
+
+export async function webdavUploadLocalVaultWithSavedConfig(masterPassword: string): Promise<WebDavSyncResult> {
+  return await invoke<WebDavSyncResult>("webdav_upload_local_vault_with_saved_config", { masterPassword });
+}
+
+export async function webdavDownloadRemoteVaultWithSavedConfig(masterPassword: string, overwrite: boolean): Promise<WebDavSyncResult> {
+  return await invoke<WebDavSyncResult>("webdav_download_remote_vault_with_saved_config", { masterPassword, overwrite });
 }
