@@ -1,3 +1,5 @@
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+
 use crate::errors::{KeySyncError, Result};
 
 pub const KEYCHAIN_SERVICE: &str = "app.keysync.ai";
@@ -9,21 +11,50 @@ pub trait KeychainBackend: Send + Sync {
     fn delete_secret(&self, service: &str, account: &str) -> Result<()>;
 }
 
-/// Placeholder backend used until the OS-specific keychain crate is wired.
-/// The crypto envelope is already real; this layer only owns the persistence
-/// mechanism for the generated data encryption key.
-pub struct UnsupportedKeychainBackend;
+pub struct SystemKeychainBackend;
 
-impl KeychainBackend for UnsupportedKeychainBackend {
-    fn set_secret(&self, _service: &str, _account: &str, _secret: &[u8]) -> Result<()> {
-        Err(KeySyncError::Vault("system keychain backend is not wired yet".into()))
+impl KeychainBackend for SystemKeychainBackend {
+    fn set_secret(&self, service: &str, account: &str, secret: &[u8]) -> Result<()> {
+        let entry = keyring::Entry::new(service, account)
+            .map_err(|err| KeySyncError::Vault(format!("failed to open system keychain entry: {err}")))?;
+        let encoded = STANDARD.encode(secret);
+        entry
+            .set_password(&encoded)
+            .map_err(|err| KeySyncError::Vault(format!("failed to save secret to system keychain: {err}")))
     }
 
-    fn get_secret(&self, _service: &str, _account: &str) -> Result<Vec<u8>> {
-        Err(KeySyncError::Vault("system keychain backend is not wired yet".into()))
+    fn get_secret(&self, service: &str, account: &str) -> Result<Vec<u8>> {
+        let entry = keyring::Entry::new(service, account)
+            .map_err(|err| KeySyncError::Vault(format!("failed to open system keychain entry: {err}")))?;
+        let encoded = entry
+            .get_password()
+            .map_err(|err| KeySyncError::Vault(format!("failed to read secret from system keychain: {err}")))?;
+        STANDARD
+            .decode(encoded)
+            .map_err(|err| KeySyncError::Vault(format!("failed to decode system keychain secret: {err}")))
     }
 
-    fn delete_secret(&self, _service: &str, _account: &str) -> Result<()> {
-        Err(KeySyncError::Vault("system keychain backend is not wired yet".into()))
+    fn delete_secret(&self, service: &str, account: &str) -> Result<()> {
+        let entry = keyring::Entry::new(service, account)
+            .map_err(|err| KeySyncError::Vault(format!("failed to open system keychain entry: {err}")))?;
+        entry
+            .delete_credential()
+            .map_err(|err| KeySyncError::Vault(format!("failed to delete secret from system keychain: {err}")))
     }
+}
+
+pub fn system_backend() -> SystemKeychainBackend {
+    SystemKeychainBackend
+}
+
+pub fn save_data_key(secret: &[u8]) -> Result<()> {
+    system_backend().set_secret(KEYCHAIN_SERVICE, DATA_KEY_ACCOUNT, secret)
+}
+
+pub fn load_data_key() -> Result<Vec<u8>> {
+    system_backend().get_secret(KEYCHAIN_SERVICE, DATA_KEY_ACCOUNT)
+}
+
+pub fn delete_data_key() -> Result<()> {
+    system_backend().delete_secret(KEYCHAIN_SERVICE, DATA_KEY_ACCOUNT)
 }
