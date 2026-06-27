@@ -37,6 +37,7 @@ Required toolchain:
 - OpenAI-compatible streaming chat through Tauri events.
 - Stop generation for active chat streams.
 - Real master-password vault encryption envelope using XChaCha20-Poly1305 and Argon2id.
+- System keychain backend for local data-key initialization and status checks.
 - Local encrypted vault record file for saved provider credentials.
 - Manual WebDAV test/upload/download for the encrypted vault file.
 - WebDAV encrypted config storage, merge downloads, and conflict review UI.
