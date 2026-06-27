@@ -6,6 +6,7 @@ import type {
   ProviderTemplate,
   SecretPayload,
   SecretRecordSummary,
+  SystemKeychainStatus,
   TestResult,
   UnifiedChatRequest,
   VaultSecurityProfile,
@@ -74,6 +75,18 @@ export async function stopChatStream(streamId: string): Promise<boolean> {
 
 export async function getVaultSecurityProfile(): Promise<VaultSecurityProfile> {
   return await invoke<VaultSecurityProfile>("vault_security_profile");
+}
+
+export async function vaultSystemKeychainStatus(): Promise<SystemKeychainStatus> {
+  return await invoke<SystemKeychainStatus>("vault_system_keychain_status");
+}
+
+export async function vaultInitSystemDataKey(): Promise<SystemKeychainStatus> {
+  return await invoke<SystemKeychainStatus>("vault_init_system_data_key");
+}
+
+export async function vaultDeleteSystemDataKey(): Promise<SystemKeychainStatus> {
+  return await invoke<SystemKeychainStatus>("vault_delete_system_data_key");
 }
 
 export async function vaultEncryptWithMasterPassword(plaintext: string, masterPassword: string): Promise<string> {
