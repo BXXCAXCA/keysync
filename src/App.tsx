@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { KeyRound, MessageSquareText, RefreshCw, Server, ShieldCheck, UploadCloud } from "lucide-react";
 import type { ChatStreamPayload, ModelInfo, ProviderTemplate, SecretRecordSummary, SystemKeychainStatus, TestResult, WebDavConfig, WebDavConfigSummary } from "./types";
 import {
@@ -31,10 +32,11 @@ import {
 } from "./lib/tauri";
 
 type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+type StoredCredentialPayload = { apiKey: string; customHeaders: Array<[string, string]> };
 
 const initialMessages: ChatMessage[] = [
   { role: "system", content: "System prompt, temperature, context length, and model settings will be configured here." },
-  { role: "assistant", content: "Save an API key, select a model, then send a message to test streaming chat." },
+  { role: "assistant", content: "Save a provider credential, select a model, then send a message to test streaming chat." },
 ];
 
 function errorMessage(error: unknown): string {
@@ -52,6 +54,14 @@ function appendAssistantDelta(messages: ChatMessage[], delta: string): ChatMessa
     }
   }
   return [...next, { role: "assistant", content: delta }];
+}
+
+async function saveCredentialWithSystemKeychain(providerId: string, displayName: string, payload: StoredCredentialPayload): Promise<SecretRecordSummary> {
+  return await invoke<SecretRecordSummary>("vault_save_secret_with_system_keychain", { providerId, displayName, payload });
+}
+
+async function unlockCredentialWithSystemKeychain(recordId: string): Promise<StoredCredentialPayload> {
+  return await invoke<StoredCredentialPayload>("vault_decrypt_secret_with_system_keychain", { recordId });
 }
 
 export default function App() {
@@ -219,6 +229,29 @@ export default function App() {
   }
 
   async function handleSaveKey() {
+    if (!activeProvider || !apiKey.trim()) return;
+    setBusy(true);
+    setTestResult(null);
+    try {
+      const displayName = keyName.trim() || `${activeProvider.name} key`;
+      const record = await saveCredentialWithSystemKeychain(activeProvider.id, displayName, {
+        apiKey: apiKey.trim(),
+        customHeaders: [],
+      });
+      await reloadVaultRecords();
+      await reloadSystemKeychainStatus();
+      setSelectedSecretId(record.id);
+      setKeyName("");
+      setApiKey("");
+      setTestResult({ ok: true, providerId: activeProvider.id, message: `Saved with system keychain: ${record.displayName}` });
+    } catch (error) {
+      setTestResult({ ok: false, providerId: activeProvider.id, message: errorMessage(error) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSaveKeyWithMasterPassword() {
     if (!activeProvider || !apiKey.trim() || !masterPassword) return;
     setBusy(true);
     setTestResult(null);
@@ -232,7 +265,7 @@ export default function App() {
       setSelectedSecretId(record.id);
       setKeyName("");
       setApiKey("");
-      setTestResult({ ok: true, providerId: activeProvider.id, message: `Saved encrypted key: ${record.displayName}` });
+      setTestResult({ ok: true, providerId: activeProvider.id, message: `Saved with master password: ${record.displayName}` });
     } catch (error) {
       setTestResult({ ok: false, providerId: activeProvider.id, message: errorMessage(error) });
     } finally {
@@ -408,14 +441,22 @@ export default function App() {
   }
 
   async function unlockSelectedSecret() {
-    if (!activeProvider || !selectedSecretId || !masterPassword) return null;
+    if (!activeProvider || !selectedSecretId) return null;
     setBusy(true);
     setTestResult(null);
     try {
-      return await vaultDecryptSecretWithMasterPassword(selectedSecretId, masterPassword);
-    } catch (error) {
-      setTestResult({ ok: false, providerId: activeProvider.id, message: errorMessage(error) });
-      return null;
+      return await unlockCredentialWithSystemKeychain(selectedSecretId);
+    } catch (systemError) {
+      if (!masterPassword) {
+        setTestResult({ ok: false, providerId: activeProvider.id, message: `System keychain unlock failed: ${errorMessage(systemError)}. Enter master password for legacy records.` });
+        return null;
+      }
+      try {
+        return await vaultDecryptSecretWithMasterPassword(selectedSecretId, masterPassword);
+      } catch (masterError) {
+        setTestResult({ ok: false, providerId: activeProvider.id, message: `Unlock failed. System: ${errorMessage(systemError)} Master: ${errorMessage(masterError)}` });
+        return null;
+      }
     } finally {
       setBusy(false);
     }
@@ -468,17 +509,17 @@ export default function App() {
       </aside>
 
       <section className="chat-panel">
-        <header><div><h1>Lightweight chat client</h1><p>Streaming chat is wired for OpenAI-compatible, Responses, Gemini, and Anthropic providers.</p></div><button className="secondary" onClick={handleListModelsWithSavedKey} disabled={busy || !selectedSecretId || !masterPassword}><RefreshCw size={16} /> Refresh models</button></header>
+        <header><div><h1>Lightweight chat client</h1><p>Streaming chat is wired for OpenAI-compatible, Responses, Gemini, and Anthropic providers.</p></div><button className="secondary" onClick={handleListModelsWithSavedKey} disabled={busy || !selectedSecretId}><RefreshCw size={16} /> Refresh models</button></header>
         <div className="messages">
           {chatMessages.map((message, index) => <article key={index} className={`message ${message.role}`}><span>{message.role}</span><p>{message.content || (message.role === "assistant" ? "Streaming..." : "")}</p></article>)}
         </div>
-        <footer className="composer"><button><UploadCloud size={18} /> Image</button><input value={chatInput} onChange={(event) => setChatInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) void handleSendChat(); }} placeholder="Send a test message to the selected model..." />{currentStreamId ? <button className="danger inline" onClick={handleStopChat}>Stop</button> : <button className="primary" disabled={busy || !selectedSecretId || !masterPassword || !selectedModel || !chatInput.trim()} onClick={handleSendChat}>Send</button>}</footer>
+        <footer className="composer"><button><UploadCloud size={18} /> Image</button><input value={chatInput} onChange={(event) => setChatInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) void handleSendChat(); }} placeholder="Send a test message to the selected model..." />{currentStreamId ? <button className="danger inline" onClick={handleStopChat}>Stop</button> : <button className="primary" disabled={busy || !selectedSecretId || !selectedModel || !chatInput.trim()} onClick={handleSendChat}>Send</button>}</footer>
       </section>
 
       <aside className="inspector">
-        <section className="card"><h2><KeyRound size={16} /> API key vault</h2><p>Keys are stored as encrypted local vault records. Master password unlock is required before testing a saved key.</p><label>Master password<input type="password" value={masterPassword} onChange={(event) => setMasterPassword(event.target.value)} placeholder="Required to save or unlock" /></label><label>Saved key<select value={selectedSecretId} onChange={(event) => setSelectedSecretId(event.target.value)}><option value="">Select saved key</option>{providerSecrets.map((secret) => <option key={secret.id} value={secret.id}>{secret.displayName}</option>)}</select></label><div className="button-row"><button onClick={handleListModelsWithSavedKey} disabled={busy || !selectedSecretId || !masterPassword}>List saved</button><button className="primary" onClick={handleTestProviderWithSavedKey} disabled={busy || !selectedSecretId || !masterPassword}>Test saved</button></div><button className="danger" onClick={handleDeleteSavedKey} disabled={busy || !selectedSecretId}>Delete saved key</button>{testResult && <p className={testResult.ok ? "ok" : "warn"}>{testResult.message}</p>}</section>
-        <section className="card"><h2>System keychain</h2><p>Default vault mode now has an OS keychain backend for the local data key. Saved key records still use master-password envelopes until migration is added.</p>{keychainStatus && <p className={keychainStatus.available ? "ok" : "warn"}>{keychainStatus.message}</p>}<dl><dt>Service</dt><dd>{keychainStatus?.service ?? "app.keysync.ai"}</dd><dt>Account</dt><dd>{keychainStatus?.account ?? "vault-data-key"}</dd><dt>Data key</dt><dd>{keychainStatus?.hasDataKey ? "Present" : "Missing"}</dd></dl><div className="button-row"><button onClick={reloadSystemKeychainStatus} disabled={busy}>Refresh</button><button className="primary" onClick={handleInitSystemKeychain} disabled={busy}>Init data key</button></div><button className="danger" onClick={handleDeleteSystemKeychain} disabled={busy || !keychainStatus?.hasDataKey}>Delete data key</button></section>
-        <section className="card"><h2>Save new key</h2><label>Display name<input value={keyName} onChange={(event) => setKeyName(event.target.value)} placeholder="Personal OpenAI key" /></label><label>API Key<input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-... or provider token" /></label><div className="button-row"><button onClick={handleListModelsWithRawKey} disabled={busy || !apiKey.trim()}>List raw</button><button onClick={handleTestProviderWithRawKey} disabled={busy || !apiKey.trim()}>Test raw</button></div><button className="primary full" onClick={handleSaveKey} disabled={busy || !apiKey.trim() || !masterPassword}>Encrypt and save</button></section>
+        <section className="card"><h2><KeyRound size={16} /> API key vault</h2><p>New records are saved with the OS keychain data key. Master password is only needed for older records or WebDAV config.</p><label>Master password<input type="password" value={masterPassword} onChange={(event) => setMasterPassword(event.target.value)} placeholder="For legacy records / WebDAV config" /></label><label>Saved key<select value={selectedSecretId} onChange={(event) => setSelectedSecretId(event.target.value)}><option value="">Select saved key</option>{providerSecrets.map((secret) => <option key={secret.id} value={secret.id}>{secret.displayName}</option>)}</select></label><div className="button-row"><button onClick={handleListModelsWithSavedKey} disabled={busy || !selectedSecretId}>List saved</button><button className="primary" onClick={handleTestProviderWithSavedKey} disabled={busy || !selectedSecretId}>Test saved</button></div><button className="danger" onClick={handleDeleteSavedKey} disabled={busy || !selectedSecretId}>Delete saved key</button>{testResult && <p className={testResult.ok ? "ok" : "warn"}>{testResult.message}</p>}</section>
+        <section className="card"><h2>System keychain</h2><p>Default vault mode uses an OS keychain data key for new local records.</p>{keychainStatus && <p className={keychainStatus.available ? "ok" : "warn"}>{keychainStatus.message}</p>}<dl><dt>Service</dt><dd>{keychainStatus?.service ?? "app.keysync.ai"}</dd><dt>Account</dt><dd>{keychainStatus?.account ?? "vault-data-key"}</dd><dt>Data key</dt><dd>{keychainStatus?.hasDataKey ? "Present" : "Missing"}</dd></dl><div className="button-row"><button onClick={reloadSystemKeychainStatus} disabled={busy}>Refresh</button><button className="primary" onClick={handleInitSystemKeychain} disabled={busy}>Init data key</button></div><button className="danger" onClick={handleDeleteSystemKeychain} disabled={busy || !keychainStatus?.hasDataKey}>Delete data key</button></section>
+        <section className="card"><h2>Save new key</h2><label>Display name<input value={keyName} onChange={(event) => setKeyName(event.target.value)} placeholder="Personal OpenAI key" /></label><label>API Key<input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-... or provider token" /></label><div className="button-row"><button onClick={handleListModelsWithRawKey} disabled={busy || !apiKey.trim()}>List raw</button><button onClick={handleTestProviderWithRawKey} disabled={busy || !apiKey.trim()}>Test raw</button></div><button className="primary full" onClick={handleSaveKey} disabled={busy || !apiKey.trim()}>Save with system keychain</button><button className="secondary full" onClick={handleSaveKeyWithMasterPassword} disabled={busy || !apiKey.trim() || !masterPassword}>Save with master password</button></section>
         <section className="card"><h2>WebDAV sync</h2><p>Manual MVP sync for the encrypted local vault file. Downloads now merge by record ID and keep conflict copies.</p>{savedWebdavSummary && <p className="ok">Saved: {savedWebdavSummary.username} @ {savedWebdavSummary.endpoint}/{savedWebdavSummary.remoteDir}</p>}<label>Endpoint<input value={webdavConfig.endpoint} onChange={(event) => setWebdavConfig({ ...webdavConfig, endpoint: event.target.value })} placeholder="https://dav.example.com/remote.php/dav/files/user" /></label><label>Remote directory<input value={webdavConfig.remoteDir} onChange={(event) => setWebdavConfig({ ...webdavConfig, remoteDir: event.target.value })} placeholder="KeySyncAI" /></label><label>Username<input value={webdavConfig.username} onChange={(event) => setWebdavConfig({ ...webdavConfig, username: event.target.value })} /></label><label>Password<input type="password" value={webdavConfig.password} onChange={(event) => setWebdavConfig({ ...webdavConfig, password: event.target.value })} placeholder="Required only to save raw config" /></label><div className="button-row"><button onClick={handleWebDavTest} disabled={busy || !webdavConfig.endpoint}>Test raw</button><button onClick={handleSaveWebDavConfig} disabled={busy || !webdavConfig.endpoint || !masterPassword}>Save encrypted</button></div><div className="button-row"><button onClick={handleWebDavUpload} disabled={busy || !webdavConfig.endpoint}>Upload raw</button><button onClick={handleWebDavDownload} disabled={busy || !webdavConfig.endpoint}>Merge download raw</button></div><div className="button-row"><button onClick={handleSavedWebDavTest} disabled={busy || !savedWebdavSummary || !masterPassword}>Test saved</button><button onClick={handleUnlockSavedWebDavConfig} disabled={busy || !savedWebdavSummary || !masterPassword}>Unlock to form</button></div><div className="button-row"><button onClick={handleSavedWebDavUpload} disabled={busy || !savedWebdavSummary || !masterPassword}>Upload saved</button><button className="primary" onClick={handleSavedWebDavDownload} disabled={busy || !savedWebdavSummary || !masterPassword}>Merge download saved</button></div>{syncMessage && <p className="ok">{syncMessage}</p>}</section>
         {conflictRecords.length > 0 && <section className="card"><h2>Conflict review</h2><p>Remote conflict copies were preserved during merge. Rename to keep them, or delete duplicate copies.</p><div className="model-list">{conflictRecords.map((record) => <span key={record.id}>{record.displayName}<small>{record.providerId} · {record.updatedAt}</small><input value={conflictRename[record.id] ?? record.displayName.replace(" [conflict remote]", "")} onChange={(event) => setConflictRename({ ...conflictRename, [record.id]: event.target.value })} /><div className="button-row"><button onClick={() => void handleAcceptConflict(record)} disabled={busy}>Keep renamed</button><button className="danger" onClick={() => void deleteRecord(record.id, "Deleted conflict copy.")} disabled={busy}>Delete conflict</button></div></span>)}</div></section>}
         <section className="card"><h2>Active provider</h2>{activeProvider ? <dl><dt>Name</dt><dd>{activeProvider.name}</dd><dt>Base URL</dt><dd>{activeProvider.baseUrl}</dd><dt>Streaming</dt><dd>{activeProvider.supportsStreaming ? "Supported" : "Not supported"}</dd><dt>Images</dt><dd>{activeProvider.supportsImages ? "Supported" : "Not supported"}</dd></dl> : <p>No provider loaded.</p>}</section>
