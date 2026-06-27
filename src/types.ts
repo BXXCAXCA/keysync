@@ -106,6 +106,21 @@ export interface VaultSecurityProfile {
   localVaultFile: string;
 }
 
+export interface WebDavConfig {
+  endpoint: string;
+  username: string;
+  password: string;
+  remoteDir: string;
+}
+
+export interface WebDavSyncResult {
+  ok: boolean;
+  operation: string;
+  remoteUrl: string;
+  bytes: number;
+  message: string;
+}
+
 export interface ErrorPayload {
   code: string;
   message: string;
