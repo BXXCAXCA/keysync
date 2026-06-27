@@ -36,8 +36,9 @@ Required toolchain:
 - Anthropic Claude built-in model list, minimal Messages API provider test, and streaming chat.
 - OpenAI-compatible streaming chat through Tauri events.
 - Stop generation for active chat streams.
-- Real master-password vault encryption envelope using XChaCha20-Poly1305 and Argon2id.
-- System keychain backend for local data-key initialization and status checks.
+- Real vault encryption envelope using XChaCha20-Poly1305 and Argon2id where needed.
+- System keychain backend for local data-key initialization, default record encryption, and status checks.
+- Optional master-password record save/unlock for compatibility.
 - Local encrypted vault record file for saved provider credentials.
 - Manual WebDAV test/upload/download for the encrypted vault file.
 - WebDAV encrypted config storage, merge downloads, and conflict review UI.
