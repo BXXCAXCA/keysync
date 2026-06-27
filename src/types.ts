@@ -106,6 +106,14 @@ export interface VaultSecurityProfile {
   localVaultFile: string;
 }
 
+export interface SystemKeychainStatus {
+  available: boolean;
+  hasDataKey: boolean;
+  service: string;
+  account: string;
+  message: string;
+}
+
 export interface WebDavConfig {
   endpoint: string;
   username: string;
