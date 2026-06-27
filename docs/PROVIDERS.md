@@ -42,10 +42,20 @@ Gemini now supports:
 
 Gemini streaming is not implemented yet.
 
+## Anthropic Claude
+
+Anthropic now supports:
+
+1. A built-in Claude model list for UI selection.
+2. Minimal `POST {baseUrl}/messages` request with `x-api-key` and `anthropic-version` headers.
+3. A `ping` prompt with `max_tokens: 1` for key validation.
+
+Anthropic does not currently use a remote model listing endpoint in this MVP. Streaming is not implemented yet.
+
 ## Pending
 
-- Anthropic model parsing and minimal request testing.
 - OpenAI Responses streaming.
 - Gemini streaming.
+- Anthropic streaming.
 - Provider-specific proxy plumbing in the shared HTTP client.
 - Richer multimodal request mapping for Gemini and Anthropic.
