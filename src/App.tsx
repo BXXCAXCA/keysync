@@ -12,7 +12,9 @@ import {
   testProviderWithKey,
   vaultDecryptSecretWithMasterPassword,
   vaultDeleteSecretRecord,
+  vaultListConflictRecords,
   vaultListSecretRecords,
+  vaultRenameSecretRecord,
   vaultSaveSecretWithMasterPassword,
   webdavDownloadRemoteVault,
   webdavDownloadRemoteVaultWithSavedConfig,
@@ -57,6 +59,8 @@ export default function App() {
   const [keyName, setKeyName] = useState("");
   const [masterPassword, setMasterPassword] = useState("");
   const [savedSecrets, setSavedSecrets] = useState<SecretRecordSummary[]>([]);
+  const [conflictRecords, setConflictRecords] = useState<SecretRecordSummary[]>([]);
+  const [conflictRename, setConflictRename] = useState<Record<string, string>>({});
   const [selectedSecretId, setSelectedSecretId] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -142,10 +146,12 @@ export default function App() {
 
   async function reloadVaultRecords() {
     try {
-      const records = await vaultListSecretRecords();
+      const [records, conflicts] = await Promise.all([vaultListSecretRecords(), vaultListConflictRecords()]);
       setSavedSecrets(records);
+      setConflictRecords(conflicts);
     } catch {
       setSavedSecrets([]);
+      setConflictRecords([]);
     }
   }
 
@@ -201,12 +207,30 @@ export default function App() {
 
   async function handleDeleteSavedKey() {
     if (!selectedSecretId) return;
+    await deleteRecord(selectedSecretId, "Deleted saved key.");
+    setSelectedSecretId("");
+  }
+
+  async function deleteRecord(recordId: string, message: string) {
     setBusy(true);
     try {
-      await vaultDeleteSecretRecord(selectedSecretId);
-      setSelectedSecretId("");
+      await vaultDeleteSecretRecord(recordId);
       await reloadVaultRecords();
-      setTestResult(activeProvider ? { ok: true, providerId: activeProvider.id, message: "Deleted saved key." } : null);
+      setTestResult(activeProvider ? { ok: true, providerId: activeProvider.id, message } : null);
+    } catch (error) {
+      setTestResult(activeProvider ? { ok: false, providerId: activeProvider.id, message: errorMessage(error) } : null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleAcceptConflict(record: SecretRecordSummary) {
+    const proposed = conflictRename[record.id]?.trim() || record.displayName.replace(" [conflict remote]", "");
+    setBusy(true);
+    try {
+      await vaultRenameSecretRecord(record.id, proposed);
+      await reloadVaultRecords();
+      setTestResult(activeProvider ? { ok: true, providerId: activeProvider.id, message: `Kept conflict copy as ${proposed}.` } : null);
     } catch (error) {
       setTestResult(activeProvider ? { ok: false, providerId: activeProvider.id, message: errorMessage(error) } : null);
     } finally {
@@ -420,6 +444,7 @@ export default function App() {
         <section className="card"><h2><KeyRound size={16} /> API key vault</h2><p>Keys are stored as encrypted local vault records. Master password unlock is required before testing a saved key.</p><label>Master password<input type="password" value={masterPassword} onChange={(event) => setMasterPassword(event.target.value)} placeholder="Required to save or unlock" /></label><label>Saved key<select value={selectedSecretId} onChange={(event) => setSelectedSecretId(event.target.value)}><option value="">Select saved key</option>{providerSecrets.map((secret) => <option key={secret.id} value={secret.id}>{secret.displayName}</option>)}</select></label><div className="button-row"><button onClick={handleListModelsWithSavedKey} disabled={busy || !selectedSecretId || !masterPassword}>List saved</button><button className="primary" onClick={handleTestProviderWithSavedKey} disabled={busy || !selectedSecretId || !masterPassword}>Test saved</button></div><button className="danger" onClick={handleDeleteSavedKey} disabled={busy || !selectedSecretId}>Delete saved key</button>{testResult && <p className={testResult.ok ? "ok" : "warn"}>{testResult.message}</p>}</section>
         <section className="card"><h2>Save new key</h2><label>Display name<input value={keyName} onChange={(event) => setKeyName(event.target.value)} placeholder="Personal OpenAI key" /></label><label>API Key<input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-... or provider token" /></label><div className="button-row"><button onClick={handleListModelsWithRawKey} disabled={busy || !apiKey.trim()}>List raw</button><button onClick={handleTestProviderWithRawKey} disabled={busy || !apiKey.trim()}>Test raw</button></div><button className="primary full" onClick={handleSaveKey} disabled={busy || !apiKey.trim() || !masterPassword}>Encrypt and save</button></section>
         <section className="card"><h2>WebDAV sync</h2><p>Manual MVP sync for the encrypted local vault file. Downloads now merge by record ID and keep conflict copies.</p>{savedWebdavSummary && <p className="ok">Saved: {savedWebdavSummary.username} @ {savedWebdavSummary.endpoint}/{savedWebdavSummary.remoteDir}</p>}<label>Endpoint<input value={webdavConfig.endpoint} onChange={(event) => setWebdavConfig({ ...webdavConfig, endpoint: event.target.value })} placeholder="https://dav.example.com/remote.php/dav/files/user" /></label><label>Remote directory<input value={webdavConfig.remoteDir} onChange={(event) => setWebdavConfig({ ...webdavConfig, remoteDir: event.target.value })} placeholder="KeySyncAI" /></label><label>Username<input value={webdavConfig.username} onChange={(event) => setWebdavConfig({ ...webdavConfig, username: event.target.value })} /></label><label>Password<input type="password" value={webdavConfig.password} onChange={(event) => setWebdavConfig({ ...webdavConfig, password: event.target.value })} placeholder="Required only to save raw config" /></label><div className="button-row"><button onClick={handleWebDavTest} disabled={busy || !webdavConfig.endpoint}>Test raw</button><button onClick={handleSaveWebDavConfig} disabled={busy || !webdavConfig.endpoint || !masterPassword}>Save encrypted</button></div><div className="button-row"><button onClick={handleWebDavUpload} disabled={busy || !webdavConfig.endpoint}>Upload raw</button><button onClick={handleWebDavDownload} disabled={busy || !webdavConfig.endpoint}>Merge download raw</button></div><div className="button-row"><button onClick={handleSavedWebDavTest} disabled={busy || !savedWebdavSummary || !masterPassword}>Test saved</button><button onClick={handleUnlockSavedWebDavConfig} disabled={busy || !savedWebdavSummary || !masterPassword}>Unlock to form</button></div><div className="button-row"><button onClick={handleSavedWebDavUpload} disabled={busy || !savedWebdavSummary || !masterPassword}>Upload saved</button><button className="primary" onClick={handleSavedWebDavDownload} disabled={busy || !savedWebdavSummary || !masterPassword}>Merge download saved</button></div>{syncMessage && <p className="ok">{syncMessage}</p>}</section>
+        {conflictRecords.length > 0 && <section className="card"><h2>Conflict review</h2><p>Remote conflict copies were preserved during merge. Rename to keep them, or delete duplicate copies.</p><div className="model-list">{conflictRecords.map((record) => <span key={record.id}>{record.displayName}<small>{record.providerId} · {record.updatedAt}</small><input value={conflictRename[record.id] ?? record.displayName.replace(" [conflict remote]", "")} onChange={(event) => setConflictRename({ ...conflictRename, [record.id]: event.target.value })} /><div className="button-row"><button onClick={() => void handleAcceptConflict(record)} disabled={busy}>Keep renamed</button><button className="danger" onClick={() => void deleteRecord(record.id, "Deleted conflict copy.")} disabled={busy}>Delete conflict</button></div></span>)}</div></section>}
         <section className="card"><h2>Active provider</h2>{activeProvider ? <dl><dt>Name</dt><dd>{activeProvider.name}</dd><dt>Base URL</dt><dd>{activeProvider.baseUrl}</dd><dt>Streaming</dt><dd>{activeProvider.supportsStreaming ? "Supported" : "Not supported"}</dd><dt>Images</dt><dd>{activeProvider.supportsImages ? "Supported" : "Not supported"}</dd></dl> : <p>No provider loaded.</p>}</section>
         <section className="card"><h2>Models</h2>{models.length ? <><label>Selected model<select value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)}>{models.map((model) => <option key={model.id} value={model.id}>{model.displayName}</option>)}</select></label><div className="model-list">{models.slice(0, 8).map((model) => <span key={model.id}>{model.displayName}<small>{model.capabilities.join(", ")}</small></span>)}</div></> : <p>No models loaded yet.</p>}</section>
         <section className="card"><h2>Model params</h2><label>System prompt<textarea value={chatMessages.find((message) => message.role === "system")?.content ?? ""} onChange={(event) => setChatMessages((messages) => [{ role: "system", content: event.target.value }, ...messages.filter((message) => message.role !== "system")])} placeholder="You are a helpful assistant." /></label><label>Temperature<input type="number" defaultValue="0.7" step="0.1" /></label><label>Context length<input type="number" defaultValue="8192" /></label></section>
