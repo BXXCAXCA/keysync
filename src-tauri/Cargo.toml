@@ -25,6 +25,7 @@ reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], defau
 futures-util = "0.3"
 rusqlite = { version = "0.32", features = ["bundled"] }
 base64 = "0.22"
+keyring = "3"
 chacha20poly1305 = { version = "0.10", features = ["std"] }
 argon2 = { version = "0.5", features = ["std"] }
 rand = "0.8"
