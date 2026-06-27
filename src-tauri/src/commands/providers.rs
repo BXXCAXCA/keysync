@@ -1,3 +1,6 @@
+use std::collections::HashSet;
+use std::sync::{Mutex, OnceLock};
+
 use futures_util::StreamExt;
 use serde_json::{json, Value};
 use tauri::Emitter;
@@ -16,6 +19,7 @@ use crate::providers::{
 };
 
 const CHAT_STREAM_EVENT: &str = "chat-stream-event";
+static ACTIVE_STREAMS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
 #[tauri::command]
 pub fn list_provider_templates() -> Vec<ProviderTemplate> {
@@ -53,6 +57,7 @@ pub async fn start_chat_stream_with_key(window: tauri::Window, config: ProviderC
 
     match config.kind {
         ProviderKind::OpenAiChat | ProviderKind::OpenAiCompatible | ProviderKind::Custom => {
+            insert_active_stream(&stream_id)?;
             tauri::async_runtime::spawn(async move {
                 if let Err(err) = run_openai_compatible_stream(window.clone(), stream_id_for_task.clone(), config, api_key, request).await {
                     let _ = emit_stream_event(
@@ -60,6 +65,7 @@ pub async fn start_chat_stream_with_key(window: tauri::Window, config: ProviderC
                         &stream_id_for_task,
                         ChatStreamEvent::Error { code: "stream_error".into(), message: err.to_string() },
                     );
+                    let _ = remove_active_stream(&stream_id_for_task);
                 }
             });
             Ok(ChatStartResult { stream_id })
@@ -68,6 +74,11 @@ pub async fn start_chat_stream_with_key(window: tauri::Window, config: ProviderC
             "streaming chat is currently implemented for OpenAI-compatible providers only".into(),
         ))),
     }
+}
+
+#[tauri::command]
+pub fn stop_chat_stream(stream_id: String) -> std::result::Result<bool, ErrorPayload> {
+    remove_active_stream(&stream_id).map_err(ErrorPayload::from)
 }
 
 fn adapter_for_kind(kind: &ProviderKind) -> Box<dyn ProviderAdapter> {
@@ -103,6 +114,7 @@ async fn run_openai_compatible_stream(window: tauri::Window, stream_id: String, 
         .map_err(|err| KeySyncError::Network(format!("streaming chat request failed: {err}")))?;
 
     if !response.status().is_success() {
+        let _ = remove_active_stream(&stream_id);
         return Err(parse_error_response(response, "streaming chat request").await);
     }
 
@@ -110,18 +122,29 @@ async fn run_openai_compatible_stream(window: tauri::Window, stream_id: String, 
     let mut stream = response.bytes_stream();
 
     while let Some(chunk) = stream.next().await {
+        if !is_stream_active(&stream_id)? {
+            emit_stream_event(&window, &stream_id, ChatStreamEvent::Done)?;
+            return Ok(());
+        }
+
         let chunk = chunk.map_err(|err| KeySyncError::Network(format!("failed to read streaming chunk: {err}")))?;
         buffer.push_str(&String::from_utf8_lossy(&chunk).replace("\r\n", "\n"));
 
         while let Some(index) = buffer.find("\n\n") {
+            if !is_stream_active(&stream_id)? {
+                emit_stream_event(&window, &stream_id, ChatStreamEvent::Done)?;
+                return Ok(());
+            }
             let event_block = buffer[..index].to_owned();
             buffer = buffer[index + 2..].to_owned();
             if process_sse_block(&window, &stream_id, &event_block)? {
+                let _ = remove_active_stream(&stream_id);
                 return Ok(());
             }
         }
     }
 
+    let _ = remove_active_stream(&stream_id);
     emit_stream_event(&window, &stream_id, ChatStreamEvent::Done)?;
     Ok(())
 }
@@ -189,4 +212,30 @@ fn emit_stream_event(window: &tauri::Window, stream_id: &str, event: ChatStreamE
             ChatStreamPayload { stream_id: stream_id.to_owned(), event },
         )
         .map_err(|err| KeySyncError::Provider(format!("failed to emit chat stream event: {err}")))
+}
+
+fn active_streams() -> &'static Mutex<HashSet<String>> {
+    ACTIVE_STREAMS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn insert_active_stream(stream_id: &str) -> std::result::Result<(), ErrorPayload> {
+    let mut streams = active_streams()
+        .lock()
+        .map_err(|_| ErrorPayload::from(KeySyncError::Provider("active stream registry is poisoned".into())))?;
+    streams.insert(stream_id.to_owned());
+    Ok(())
+}
+
+fn remove_active_stream(stream_id: &str) -> crate::errors::Result<bool> {
+    let mut streams = active_streams()
+        .lock()
+        .map_err(|_| KeySyncError::Provider("active stream registry is poisoned".into()))?;
+    Ok(streams.remove(stream_id))
+}
+
+fn is_stream_active(stream_id: &str) -> crate::errors::Result<bool> {
+    let streams = active_streams()
+        .lock()
+        .map_err(|_| KeySyncError::Provider("active stream registry is poisoned".into()))?;
+    Ok(streams.contains(stream_id))
 }
