@@ -123,6 +123,19 @@ pub enum ChatStreamEvent {
     Error { code: String, message: String },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatStreamPayload {
+    pub stream_id: String,
+    pub event: ChatStreamEvent,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatStartResult {
+    pub stream_id: String,
+}
+
 #[async_trait]
 pub trait ProviderAdapter: Send + Sync {
     fn kind(&self) -> ProviderKind;
