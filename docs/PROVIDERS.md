@@ -6,7 +6,7 @@ The backend exposes provider commands used by the UI:
 
 - `list_models_with_key(config, apiKey)`
 - `test_provider_with_key(config, apiKey, model?)`
-- `start_chat_stream_with_key(config, apiKey, request)` for OpenAI-compatible and Gemini streaming
+- `start_chat_stream_with_key(config, apiKey, request)` for OpenAI-compatible, Gemini, and Anthropic streaming
 - `stop_chat_stream(streamId)` for cooperative stream cancellation
 
 ## OpenAI-compatible
@@ -47,13 +47,14 @@ Anthropic now supports:
 
 1. A built-in Claude model list for UI selection.
 2. Minimal `POST {baseUrl}/messages` request with `x-api-key` and `anthropic-version` headers.
-3. A `ping` prompt with `max_tokens: 1` for key validation.
+3. A `ping` prompt with `max_tokens: 1` for validation.
+4. Streaming `POST {baseUrl}/messages` with `stream: true` wired into the shared Tauri chat stream event path.
+5. Streaming event parsing for `content_block_delta`, `message_delta`, `message_stop`, and `error`.
 
-Anthropic does not currently use a remote model listing endpoint in this MVP. Streaming is not implemented yet.
+Anthropic does not currently use a remote model listing endpoint in this MVP.
 
 ## Pending
 
 - OpenAI Responses streaming.
-- Anthropic streaming.
 - Provider-specific proxy plumbing in the shared HTTP client.
 - Richer multimodal request mapping for Gemini and Anthropic.
