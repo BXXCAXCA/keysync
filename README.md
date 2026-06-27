@@ -33,7 +33,7 @@ Required toolchain:
 - OpenAI Chat reuses the OpenAI-compatible adapter.
 - OpenAI Responses minimal test command.
 - Gemini model listing, minimal `generateContent` provider test, and streaming chat.
-- Anthropic Claude built-in model list and minimal Messages API provider test.
+- Anthropic Claude built-in model list, minimal Messages API provider test, and streaming chat.
 - OpenAI-compatible streaming chat through Tauri events.
 - Stop generation for active chat streams.
 - Real master-password vault encryption envelope using XChaCha20-Poly1305 and Argon2id.
