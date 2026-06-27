@@ -1,11 +1,15 @@
 # Provider implementation notes
 
-## Implemented in this milestone
+## Implemented
 
-The backend now exposes two real provider commands:
+The backend exposes provider commands used by the UI:
 
 - `list_models_with_key(config, apiKey)`
 - `test_provider_with_key(config, apiKey, model?)`
+- `start_chat_stream_with_key(config, apiKey, request)` for OpenAI-compatible streaming
+- `stop_chat_stream(streamId)` for cooperative stream cancellation
+
+## OpenAI-compatible
 
 The OpenAI-compatible adapter performs:
 
@@ -13,15 +17,35 @@ The OpenAI-compatible adapter performs:
 2. Parsing of OpenAI-compatible `{ data: [{ id }] }` model lists.
 3. Basic model capability classification from model IDs.
 4. `POST {baseUrl}{chatPath}` with a minimal non-streaming `ping` request.
-5. Error normalization with simple secret redaction.
+5. `POST {baseUrl}{chatPath}` with `stream: true` for SSE chat streaming.
+6. Error normalization with simple secret redaction.
 
 OpenAI Chat reuses the OpenAI-compatible adapter because the official Chat Completions API follows the same `/models` and `/chat/completions` shape.
 
+## OpenAI Responses
+
 OpenAI Responses has its own minimal test path using `/responses` and `max_output_tokens`.
 
-## Next steps
+Streaming for Responses is not implemented yet.
 
-- Add encrypted vault persistence so the UI no longer needs temporary API key input.
-- Add provider-specific Gemini and Anthropic model parsing.
-- Add streaming response parsers and cancellation.
-- Add proxy plumbing to the shared HTTP client.
+## Gemini
+
+Gemini now supports:
+
+1. `GET {baseUrl}/models` with the `x-goog-api-key` header.
+2. Parsing Gemini `{ models: [...] }` responses.
+3. Capability mapping from `supportedGenerationMethods`:
+   - `generateContent` -> `chat`
+   - `embedContent` / `batchEmbedContents` -> `embedding`
+4. Context window mapping from `inputTokenLimit`.
+5. Minimal `POST {baseUrl}/models/{model}:generateContent` request with a `ping` prompt.
+
+Gemini streaming is not implemented yet.
+
+## Pending
+
+- Anthropic model parsing and minimal request testing.
+- OpenAI Responses streaming.
+- Gemini streaming.
+- Provider-specific proxy plumbing in the shared HTTP client.
+- Richer multimodal request mapping for Gemini and Anthropic.
