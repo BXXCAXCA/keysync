@@ -88,6 +88,10 @@ export async function vaultListSecretRecords(): Promise<SecretRecordSummary[]> {
   return await invoke<SecretRecordSummary[]>("vault_list_secret_records");
 }
 
+export async function vaultListConflictRecords(): Promise<SecretRecordSummary[]> {
+  return await invoke<SecretRecordSummary[]>("vault_list_conflict_records");
+}
+
 export async function vaultSaveSecretWithMasterPassword(providerId: string, displayName: string, payload: SecretPayload, masterPassword: string): Promise<SecretRecordSummary> {
   return await invoke<SecretRecordSummary>("vault_save_secret_with_master_password", { providerId, displayName, payload, masterPassword });
 }
@@ -98,6 +102,10 @@ export async function vaultDecryptSecretWithMasterPassword(recordId: string, mas
 
 export async function vaultDeleteSecretRecord(recordId: string): Promise<boolean> {
   return await invoke<boolean>("vault_delete_secret_record", { recordId });
+}
+
+export async function vaultRenameSecretRecord(recordId: string, displayName: string): Promise<SecretRecordSummary> {
+  return await invoke<SecretRecordSummary>("vault_rename_secret_record", { recordId, displayName });
 }
 
 export async function webdavTestConnection(config: WebDavConfig): Promise<WebDavSyncResult> {
