@@ -15,6 +15,8 @@ pub fn run() {
             commands::providers::list_models_with_key,
             commands::providers::test_provider_with_key,
             commands::vault::vault_security_profile,
+            commands::vault::vault_encrypt_with_master_password,
+            commands::vault::vault_decrypt_with_master_password,
             commands::sync::webdav_sync_profile,
         ])
         .run(tauri::generate_context!())

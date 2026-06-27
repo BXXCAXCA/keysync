@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ModelInfo, ProviderConfig, ProviderTemplate, TestResult } from "../types";
+import type { ModelInfo, ProviderConfig, ProviderTemplate, TestResult, VaultSecurityProfile } from "../types";
 import { providerTemplates as fallbackTemplates } from "../data/providerTemplates";
 
 export async function loadProviderTemplates(): Promise<ProviderTemplate[]> {
@@ -49,4 +49,16 @@ export async function listModelsWithKey(config: ProviderConfig, apiKey: string):
 
 export async function testProviderWithKey(config: ProviderConfig, apiKey: string, model?: string): Promise<TestResult> {
   return await invoke<TestResult>("test_provider_with_key", { config, apiKey, model: model || null });
+}
+
+export async function getVaultSecurityProfile(): Promise<VaultSecurityProfile> {
+  return await invoke<VaultSecurityProfile>("vault_security_profile");
+}
+
+export async function vaultEncryptWithMasterPassword(plaintext: string, masterPassword: string): Promise<string> {
+  return await invoke<string>("vault_encrypt_with_master_password", { plaintext, masterPassword });
+}
+
+export async function vaultDecryptWithMasterPassword(envelope: string, masterPassword: string): Promise<string> {
+  return await invoke<string>("vault_decrypt_with_master_password", { envelope, masterPassword });
 }

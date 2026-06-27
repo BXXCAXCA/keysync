@@ -50,6 +50,16 @@ export interface TestResult {
   message: string;
 }
 
+export interface VaultSecurityProfile {
+  defaultMode: string;
+  optionalMode: string;
+  plaintextRevealPolicy: string;
+  syncFilePolicy: string;
+  envelopeAlgorithm: string;
+  kdfAlgorithm: string;
+  systemKeychainStatus: string;
+}
+
 export interface ErrorPayload {
   code: string;
   message: string;
