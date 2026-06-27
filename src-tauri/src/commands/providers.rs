@@ -61,11 +61,17 @@ pub async fn start_chat_stream_with_key(window: tauri::Window, config: ProviderC
             insert_active_stream(&stream_id)?;
             tauri::async_runtime::spawn(async move {
                 if let Err(err) = run_openai_compatible_stream(window.clone(), stream_id_for_task.clone(), config, api_key, request).await {
-                    let _ = emit_stream_event(
-                        &window,
-                        &stream_id_for_task,
-                        ChatStreamEvent::Error { code: "stream_error".into(), message: err.to_string() },
-                    );
+                    let _ = emit_stream_event(&window, &stream_id_for_task, ChatStreamEvent::Error { code: "stream_error".into(), message: err.to_string() });
+                    let _ = remove_active_stream(&stream_id_for_task);
+                }
+            });
+            Ok(ChatStartResult { stream_id })
+        }
+        ProviderKind::OpenAiResponses => {
+            insert_active_stream(&stream_id)?;
+            tauri::async_runtime::spawn(async move {
+                if let Err(err) = run_openai_responses_stream(window.clone(), stream_id_for_task.clone(), config, api_key, request).await {
+                    let _ = emit_stream_event(&window, &stream_id_for_task, ChatStreamEvent::Error { code: "stream_error".into(), message: err.to_string() });
                     let _ = remove_active_stream(&stream_id_for_task);
                 }
             });
@@ -75,11 +81,7 @@ pub async fn start_chat_stream_with_key(window: tauri::Window, config: ProviderC
             insert_active_stream(&stream_id)?;
             tauri::async_runtime::spawn(async move {
                 if let Err(err) = run_gemini_stream(window.clone(), stream_id_for_task.clone(), config, api_key, request).await {
-                    let _ = emit_stream_event(
-                        &window,
-                        &stream_id_for_task,
-                        ChatStreamEvent::Error { code: "stream_error".into(), message: err.to_string() },
-                    );
+                    let _ = emit_stream_event(&window, &stream_id_for_task, ChatStreamEvent::Error { code: "stream_error".into(), message: err.to_string() });
                     let _ = remove_active_stream(&stream_id_for_task);
                 }
             });
@@ -89,19 +91,12 @@ pub async fn start_chat_stream_with_key(window: tauri::Window, config: ProviderC
             insert_active_stream(&stream_id)?;
             tauri::async_runtime::spawn(async move {
                 if let Err(err) = run_anthropic_stream(window.clone(), stream_id_for_task.clone(), config, api_key, request).await {
-                    let _ = emit_stream_event(
-                        &window,
-                        &stream_id_for_task,
-                        ChatStreamEvent::Error { code: "stream_error".into(), message: err.to_string() },
-                    );
+                    let _ = emit_stream_event(&window, &stream_id_for_task, ChatStreamEvent::Error { code: "stream_error".into(), message: err.to_string() });
                     let _ = remove_active_stream(&stream_id_for_task);
                 }
             });
             Ok(ChatStartResult { stream_id })
         }
-        ProviderKind::OpenAiResponses => Err(ErrorPayload::from(KeySyncError::Provider(
-            "streaming chat is currently implemented for OpenAI-compatible, Gemini, and Anthropic providers only".into(),
-        ))),
     }
 }
 
@@ -123,16 +118,12 @@ fn adapter_for_kind(kind: &ProviderKind) -> Box<dyn ProviderAdapter> {
 async fn run_openai_compatible_stream(window: tauri::Window, stream_id: String, config: ProviderConfig, api_key: String, request: UnifiedChatRequest) -> crate::errors::Result<()> {
     emit_stream_event(&window, &stream_id, ChatStreamEvent::Start)?;
 
-    let client = build_client()?;
-    let url = join_url(&config.base_url, config.chat_path.as_deref().or(Some("/chat/completions")));
-    let messages = build_openai_messages(&request);
-
-    let response = client
-        .post(url)
+    let response = build_client()?
+        .post(join_url(&config.base_url, config.chat_path.as_deref().or(Some("/chat/completions"))))
         .bearer_auth(api_key)
         .json(&json!({
             "model": request.model,
-            "messages": messages,
+            "messages": build_openai_messages(&request),
             "stream": true,
             "stream_options": { "include_usage": true },
             "temperature": request.temperature.unwrap_or(0.7),
@@ -148,6 +139,37 @@ async fn run_openai_compatible_stream(window: tauri::Window, stream_id: String, 
     }
 
     process_sse_stream(window, stream_id, response, process_openai_sse_block).await
+}
+
+async fn run_openai_responses_stream(window: tauri::Window, stream_id: String, config: ProviderConfig, api_key: String, request: UnifiedChatRequest) -> crate::errors::Result<()> {
+    emit_stream_event(&window, &stream_id, ChatStreamEvent::Start)?;
+
+    let mut body = json!({
+        "model": request.model,
+        "input": build_responses_input(&request),
+        "stream": true,
+        "temperature": request.temperature.unwrap_or(0.7),
+        "max_output_tokens": request.max_tokens.unwrap_or(512)
+    });
+
+    if let Some(system_prompt) = request.system_prompt.as_ref().filter(|value| !value.trim().is_empty()) {
+        body["instructions"] = json!(system_prompt);
+    }
+
+    let response = build_client()?
+        .post(join_url(&config.base_url, config.responses_path.as_deref().or(Some("/responses"))))
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|err| KeySyncError::Network(format!("OpenAI Responses streaming request failed: {err}")))?;
+
+    if !response.status().is_success() {
+        let _ = remove_active_stream(&stream_id);
+        return Err(parse_error_response(response, "OpenAI Responses streaming request").await);
+    }
+
+    process_sse_stream(window, stream_id, response, process_responses_sse_block).await
 }
 
 async fn run_gemini_stream(window: tauri::Window, stream_id: String, config: ProviderConfig, api_key: String, request: UnifiedChatRequest) -> crate::errors::Result<()> {
@@ -250,10 +272,39 @@ fn build_openai_messages(request: &UnifiedChatRequest) -> Vec<Value> {
     }
 
     for message in &request.messages {
+        if message.content.trim().is_empty() {
+            continue;
+        }
         messages.push(json!({ "role": &message.role, "content": &message.content }));
     }
 
     messages
+}
+
+fn build_responses_input(request: &UnifiedChatRequest) -> Vec<Value> {
+    let mut input = Vec::new();
+    for message in &request.messages {
+        if message.content.trim().is_empty() || message.role == "system" {
+            continue;
+        }
+        let role = if message.role == "assistant" { "assistant" } else { "user" };
+        input.push(json!({
+            "role": role,
+            "content": [{
+                "type": if role == "assistant" { "output_text" } else { "input_text" },
+                "text": &message.content
+            }]
+        }));
+    }
+
+    if input.is_empty() {
+        input.push(json!({
+            "role": "user",
+            "content": [{ "type": "input_text", "text": "ping" }]
+        }));
+    }
+
+    input
 }
 
 fn build_gemini_contents(request: &UnifiedChatRequest) -> Vec<Value> {
@@ -293,7 +344,7 @@ fn build_anthropic_messages(request: &UnifiedChatRequest) -> Vec<Value> {
         let role = if message.role == "assistant" { "assistant" } else { "user" };
         messages.push(json!({
             "role": role,
-            "content": message.content
+            "content": &message.content
         }));
     }
 
@@ -341,6 +392,63 @@ fn process_openai_sse_block(window: &tauri::Window, stream_id: &str, block: &str
                 emit_stream_event(window, stream_id, ChatStreamEvent::Done)?;
                 return Ok(true);
             }
+        }
+    }
+
+    Ok(false)
+}
+
+fn process_responses_sse_block(window: &tauri::Window, stream_id: &str, block: &str) -> crate::errors::Result<bool> {
+    for line in block.lines() {
+        let Some(raw_data) = line.strip_prefix("data:") else { continue };
+        let data = raw_data.trim();
+        if data.is_empty() || data == "[DONE]" {
+            if data == "[DONE]" {
+                emit_stream_event(window, stream_id, ChatStreamEvent::Done)?;
+                return Ok(true);
+            }
+            continue;
+        }
+
+        let value: Value = serde_json::from_str(data)
+            .map_err(|err| KeySyncError::Provider(format!("failed to parse OpenAI Responses streaming SSE payload: {err}")))?;
+        let event_type = value.get("type").and_then(Value::as_str).unwrap_or_default();
+
+        match event_type {
+            "response.output_text.delta" => {
+                if let Some(text) = value.get("delta").and_then(Value::as_str).filter(|text| !text.is_empty()) {
+                    emit_stream_event(window, stream_id, ChatStreamEvent::Delta { text: text.to_owned() })?;
+                }
+            }
+            "response.completed" => {
+                emit_stream_event(window, stream_id, ChatStreamEvent::Done)?;
+                return Ok(true);
+            }
+            "response.failed" | "response.incomplete" | "error" => {
+                let message = value.pointer("/error/message")
+                    .or_else(|| value.pointer("/response/error/message"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("OpenAI Responses stream ended with an error");
+                emit_stream_event(window, stream_id, ChatStreamEvent::Error { code: "responses_stream_error".into(), message: message.to_owned() })?;
+                return Ok(true);
+            }
+            "response.output_item.done" | "response.content_part.done" => {
+                if let Some(text) = value.pointer("/item/content/0/text").and_then(Value::as_str).filter(|text| !text.is_empty()) {
+                    emit_stream_event(window, stream_id, ChatStreamEvent::Delta { text: text.to_owned() })?;
+                }
+            }
+            _ => {}
+        }
+
+        if let Some(usage) = value.pointer("/response/usage") {
+            emit_stream_event(
+                window,
+                stream_id,
+                ChatStreamEvent::Usage {
+                    input_tokens: usage.get("input_tokens").and_then(Value::as_u64),
+                    output_tokens: usage.get("output_tokens").and_then(Value::as_u64),
+                },
+            )?;
         }
     }
 
@@ -444,10 +552,7 @@ fn gemini_stream_url(config: &ProviderConfig, model_id: &str) -> String {
 
 fn emit_stream_event(window: &tauri::Window, stream_id: &str, event: ChatStreamEvent) -> crate::errors::Result<()> {
     window
-        .emit(
-            CHAT_STREAM_EVENT,
-            ChatStreamPayload { stream_id: stream_id.to_owned(), event },
-        )
+        .emit(CHAT_STREAM_EVENT, ChatStreamPayload { stream_id: stream_id.to_owned(), event })
         .map_err(|err| KeySyncError::Provider(format!("failed to emit chat stream event: {err}")))
 }
 
