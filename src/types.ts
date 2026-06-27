@@ -19,11 +19,38 @@ export interface ProviderTemplate {
   editable: boolean;
 }
 
+export interface ProviderConfig {
+  id: string;
+  name: string;
+  kind: ProviderKind;
+  baseUrl: string;
+  modelsPath?: string;
+  chatPath?: string;
+  responsesPath?: string;
+  proxyId?: string;
+}
+
+export interface ModelInfo {
+  id: string;
+  displayName: string;
+  providerId: string;
+  capabilities: string[];
+  contextWindow?: number;
+  isFavorite: boolean;
+  isHidden: boolean;
+  alias?: string;
+}
+
 export interface TestResult {
   ok: boolean;
   providerId: string;
   modelCount?: number;
   selectedModel?: string;
   latencyMs?: number;
+  message: string;
+}
+
+export interface ErrorPayload {
+  code: string;
   message: string;
 }

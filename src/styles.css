@@ -2,7 +2,8 @@
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 1120px; min-height: 720px; }
 button, input, select, textarea { font: inherit; }
-.shell { display: grid; grid-template-columns: 290px minmax(520px, 1fr) 340px; height: 100vh; background: radial-gradient(circle at top left, #1e293b, #020617 58%); }
+button:disabled { opacity: .48; cursor: not-allowed; }
+.shell { display: grid; grid-template-columns: 290px minmax(520px, 1fr) 360px; height: 100vh; background: radial-gradient(circle at top left, #1e293b, #020617 58%); }
 .sidebar, .inspector { padding: 20px; border-right: 1px solid rgba(148, 163, 184, .18); overflow: auto; }
 .inspector { border-right: 0; border-left: 1px solid rgba(148, 163, 184, .18); }
 .brand { display: flex; gap: 12px; align-items: center; margin-bottom: 26px; }
@@ -10,10 +11,11 @@ button, input, select, textarea { font: inherit; }
 h1, h2, p { margin-top: 0; } h1 { font-size: 24px; } h2 { display: flex; gap: 8px; align-items: center; font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: #cbd5e1; }
 .provider-list, .conversation-list { display: grid; gap: 8px; }
 button { border: 1px solid rgba(148, 163, 184, .22); background: rgba(15, 23, 42, .72); color: #e2e8f0; border-radius: 12px; padding: 10px 12px; cursor: pointer; }
-button:hover, button.active { border-color: rgba(125, 211, 252, .75); background: rgba(14, 116, 144, .22); }
+button:hover:not(:disabled), button.active { border-color: rgba(125, 211, 252, .75); background: rgba(14, 116, 144, .22); }
 button span, button small { display: block; text-align: left; } button small { margin-top: 2px; }
 .primary { background: linear-gradient(135deg, #2563eb, #0891b2); border: none; color: white; }
 .secondary { display: inline-flex; align-items: center; gap: 8px; }
+.button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
 .chat-panel { display: grid; grid-template-rows: auto 1fr auto; padding: 24px; min-width: 0; }
 .chat-panel header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
 .messages { display: flex; flex-direction: column; gap: 14px; padding: 20px 0; overflow: auto; }
@@ -21,9 +23,11 @@ button span, button small { display: block; text-align: left; } button small { m
 .message span { color: #38bdf8; font-size: 12px; text-transform: uppercase; }
 .message.user { margin-left: auto; background: rgba(37, 99, 235, .18); }
 .composer { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; padding-top: 14px; border-top: 1px solid rgba(148, 163, 184, .16); }
-input, textarea { width: 100%; border: 1px solid rgba(148, 163, 184, .22); background: rgba(15, 23, 42, .86); color: #e2e8f0; border-radius: 12px; padding: 11px 12px; }
+input, select, textarea { width: 100%; border: 1px solid rgba(148, 163, 184, .22); background: rgba(15, 23, 42, .86); color: #e2e8f0; border-radius: 12px; padding: 11px 12px; }
 textarea { min-height: 80px; resize: vertical; }
 .card { border: 1px solid rgba(148, 163, 184, .16); border-radius: 18px; padding: 16px; background: rgba(15, 23, 42, .56); margin-bottom: 16px; }
 dl { display: grid; grid-template-columns: 96px 1fr; gap: 8px 12px; } dt { color: #cbd5e1; } dd { margin: 0; overflow-wrap: anywhere; }
 label { display: grid; gap: 6px; margin-top: 12px; color: #cbd5e1; }
+.model-list { display: grid; gap: 8px; margin-top: 12px; max-height: 220px; overflow: auto; }
+.model-list span { display: grid; gap: 2px; padding: 8px 10px; border-radius: 10px; background: rgba(15, 23, 42, .72); border: 1px solid rgba(148, 163, 184, .12); overflow-wrap: anywhere; }
 .warn { color: #fbbf24; } .ok { color: #86efac; }

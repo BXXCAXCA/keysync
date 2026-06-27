@@ -12,6 +12,8 @@ pub fn run() {
             commands::app::app_status,
             commands::providers::list_provider_templates,
             commands::providers::test_provider_placeholder,
+            commands::providers::list_models_with_key,
+            commands::providers::test_provider_with_key,
             commands::vault::vault_security_profile,
             commands::sync::webdav_sync_profile,
         ])

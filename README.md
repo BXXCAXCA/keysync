@@ -24,9 +24,22 @@ Required toolchain:
 - Rust stable
 - Tauri v2 prerequisites for your OS
 
+## Current implementation
+
+- Tauri + React shell.
+- Three-column client UI prototype.
+- Provider template loading from Rust.
+- OpenAI-compatible model listing and minimal key test commands.
+- OpenAI Chat reuses the OpenAI-compatible adapter.
+- OpenAI Responses minimal test command.
+- Vault, WebDAV, proxy, SQLite, Gemini, and Anthropic module boundaries.
+
 ## Architecture
 
-See `docs/ARCHITECTURE.md`.
+See:
+
+- `docs/ARCHITECTURE.md`
+- `docs/PROVIDERS.md`
 
 ## License
 

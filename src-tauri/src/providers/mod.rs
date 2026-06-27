@@ -1,5 +1,6 @@
 pub mod anthropic;
 pub mod gemini;
+pub mod http;
 pub mod openai;
 pub mod openai_compatible;
 pub mod openai_responses;

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ProviderKind {
     #[serde(rename = "openai_chat")]
     OpenAiChat,
@@ -20,13 +20,13 @@ pub enum ProviderKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderTemplate {
-    pub id: &'static str,
-    pub name: &'static str,
+    pub id: String,
+    pub name: String,
     pub kind: ProviderKind,
-    pub base_url: &'static str,
-    pub models_path: Option<&'static str>,
-    pub chat_path: Option<&'static str>,
-    pub responses_path: Option<&'static str>,
+    pub base_url: String,
+    pub models_path: Option<String>,
+    pub chat_path: Option<String>,
+    pub responses_path: Option<String>,
     pub supports_streaming: bool,
     pub supports_images: bool,
     pub editable: bool,
@@ -34,8 +34,19 @@ pub struct ProviderTemplate {
 
 impl ProviderTemplate {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(id: &'static str, name: &'static str, kind: ProviderKind, base_url: &'static str, models_path: Option<&'static str>, chat_path: Option<&'static str>, responses_path: Option<&'static str>, supports_streaming: bool, supports_images: bool, editable: bool) -> Self {
-        Self { id, name, kind, base_url, models_path, chat_path, responses_path, supports_streaming, supports_images, editable }
+    pub fn new(id: &str, name: &str, kind: ProviderKind, base_url: &str, models_path: Option<&str>, chat_path: Option<&str>, responses_path: Option<&str>, supports_streaming: bool, supports_images: bool, editable: bool) -> Self {
+        Self {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            kind,
+            base_url: base_url.to_owned(),
+            models_path: models_path.map(str::to_owned),
+            chat_path: chat_path.map(str::to_owned),
+            responses_path: responses_path.map(str::to_owned),
+            supports_streaming,
+            supports_images,
+            editable,
+        }
     }
 }
 
