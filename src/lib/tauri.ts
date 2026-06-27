@@ -1,5 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ModelInfo, ProviderConfig, ProviderTemplate, SecretPayload, SecretRecordSummary, TestResult, VaultSecurityProfile } from "../types";
+import type {
+  ChatStartResult,
+  ModelInfo,
+  ProviderConfig,
+  ProviderTemplate,
+  SecretPayload,
+  SecretRecordSummary,
+  TestResult,
+  UnifiedChatRequest,
+  VaultSecurityProfile,
+} from "../types";
 import { providerTemplates as fallbackTemplates } from "../data/providerTemplates";
 
 export async function loadProviderTemplates(): Promise<ProviderTemplate[]> {
@@ -49,6 +59,10 @@ export async function listModelsWithKey(config: ProviderConfig, apiKey: string):
 
 export async function testProviderWithKey(config: ProviderConfig, apiKey: string, model?: string): Promise<TestResult> {
   return await invoke<TestResult>("test_provider_with_key", { config, apiKey, model: model || null });
+}
+
+export async function startChatStreamWithKey(config: ProviderConfig, apiKey: string, request: UnifiedChatRequest): Promise<ChatStartResult> {
+  return await invoke<ChatStartResult>("start_chat_stream_with_key", { config, apiKey, request });
 }
 
 export async function getVaultSecurityProfile(): Promise<VaultSecurityProfile> {
