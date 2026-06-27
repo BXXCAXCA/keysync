@@ -2,7 +2,7 @@
 
 ## Status
 
-The MVP WebDAV sync layer now supports manual encrypted vault file operations, encrypted local storage for WebDAV credentials, and basic record-level merge on download.
+The MVP WebDAV sync layer now supports manual encrypted vault file operations, encrypted local storage for WebDAV credentials, basic record-level merge on download, and conflict review in the UI.
 
 Implemented:
 
@@ -13,6 +13,7 @@ Implemented:
 - Local vault backup before overwrite or merge.
 - Record-level merge by secret record ID.
 - Conflict copies for records with the same ID but different encrypted payload or metadata.
+- Conflict review UI for renaming kept copies or deleting duplicate conflict copies.
 - Frontend WebDAV panel for endpoint, remote directory, username, and password.
 - Saving WebDAV configuration to `webdav.config.json`.
 - Encrypting the saved WebDAV password with the master-password vault envelope.
@@ -22,7 +23,6 @@ Implemented:
 Pending:
 
 - Sync metadata such as ETag, revision, and device ID.
-- Conflict review UI.
 - Settings/model preference sync.
 - Optional conversation history sync.
 - Moving WebDAV config into a unified settings store.
@@ -54,7 +54,16 @@ Rules:
 - Conflict copies are renamed with `[conflict remote]` so users can inspect them later.
 - Before merge or overwrite, the existing local vault is backed up as `vault.local.<timestamp>.backup.json`.
 
-This is intentionally conservative: it preserves data first and leaves human conflict review for a later UI.
+## Conflict review
+
+The UI lists records whose display name contains `[conflict remote]`.
+
+Available actions:
+
+- Keep renamed: removes the conflict suffix by default, or uses the user's custom name.
+- Delete conflict: removes the preserved remote conflict copy.
+
+This is intentionally conservative: sync preserves data first, then lets users resolve conflicts manually.
 
 ## Local config file
 
