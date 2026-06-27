@@ -66,7 +66,6 @@ export default function App() {
     let unlisten: UnlistenFn | undefined;
     listen<ChatStreamPayload>("chat-stream-event", (event) => {
       const payload = event.payload;
-      if (activeStreamIdRef.current && payload.streamId !== activeStreamIdRef.current) return;
 
       if (payload.event.type === "start") {
         setBusy(true);
