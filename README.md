@@ -31,7 +31,7 @@ Required toolchain:
 - Provider template loading from Rust.
 - OpenAI-compatible model listing and minimal provider test commands.
 - OpenAI Chat reuses the OpenAI-compatible adapter.
-- OpenAI Responses minimal test command.
+- OpenAI Responses minimal test command and streaming chat.
 - Gemini model listing, minimal `generateContent` provider test, and streaming chat.
 - Anthropic Claude built-in model list, minimal Messages API provider test, and streaming chat.
 - OpenAI-compatible streaming chat through Tauri events.
