@@ -6,7 +6,7 @@ The backend exposes provider commands used by the UI:
 
 - `list_models_with_key(config, apiKey)`
 - `test_provider_with_key(config, apiKey, model?)`
-- `start_chat_stream_with_key(config, apiKey, request)` for OpenAI-compatible, Gemini, and Anthropic streaming
+- `start_chat_stream_with_key(config, apiKey, request)` for OpenAI-compatible, OpenAI Responses, Gemini, and Anthropic streaming
 - `stop_chat_stream(streamId)` for cooperative stream cancellation
 
 ## OpenAI-compatible
@@ -24,9 +24,11 @@ OpenAI Chat reuses the OpenAI-compatible adapter because the official Chat Compl
 
 ## OpenAI Responses
 
-OpenAI Responses has its own minimal test path using `/responses` and `max_output_tokens`.
+OpenAI Responses supports:
 
-Streaming for Responses is not implemented yet.
+1. Minimal `POST {baseUrl}/responses` test using `input` and `max_output_tokens`.
+2. Streaming `POST {baseUrl}/responses` with `stream: true` wired into the shared Tauri chat stream event path.
+3. Streaming event parsing for `response.output_text.delta`, `response.completed`, `response.failed`, `response.incomplete`, and `error`.
 
 ## Gemini
 
@@ -55,6 +57,6 @@ Anthropic does not currently use a remote model listing endpoint in this MVP.
 
 ## Pending
 
-- OpenAI Responses streaming.
 - Provider-specific proxy plumbing in the shared HTTP client.
 - Richer multimodal request mapping for Gemini and Anthropic.
+- Response-stream parser hardening with provider fixture tests.
