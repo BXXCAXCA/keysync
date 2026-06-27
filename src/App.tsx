@@ -7,6 +7,7 @@ import {
   listModelsWithKey,
   loadProviderTemplates,
   startChatStreamWithKey,
+  stopChatStream,
   templateToConfig,
   testProviderWithKey,
   vaultDecryptSecretWithMasterPassword,
@@ -54,6 +55,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(initialMessages);
+  const [currentStreamId, setCurrentStreamId] = useState<string | null>(null);
   const activeStreamIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -90,12 +92,14 @@ export default function App() {
         setChatMessages((messages) => [...messages, { role: "assistant", content: `Stream error: ${payload.event.message}` }]);
         setBusy(false);
         activeStreamIdRef.current = null;
+        setCurrentStreamId(null);
         return;
       }
 
       if (payload.event.type === "done") {
         setBusy(false);
         activeStreamIdRef.current = null;
+        setCurrentStreamId(null);
       }
     }).then((dispose) => {
       unlisten = dispose;
@@ -190,7 +194,7 @@ export default function App() {
   }
 
   async function handleSendChat() {
-    if (!activeProvider || !selectedModel || !chatInput.trim()) return;
+    if (!activeProvider || !selectedModel || !chatInput.trim() || currentStreamId) return;
     const secret = await unlockSelectedSecret();
     if (!secret) return;
 
@@ -209,9 +213,25 @@ export default function App() {
         systemPrompt: chatMessages.find((message) => message.role === "system")?.content,
       });
       activeStreamIdRef.current = result.streamId;
+      setCurrentStreamId(result.streamId);
     } catch (error) {
       setBusy(false);
+      setCurrentStreamId(null);
       setChatMessages((messages) => [...messages, { role: "assistant", content: `Failed to start stream: ${errorMessage(error)}` }]);
+    }
+  }
+
+  async function handleStopChat() {
+    if (!currentStreamId) return;
+    const streamId = currentStreamId;
+    activeStreamIdRef.current = null;
+    setCurrentStreamId(null);
+    setBusy(false);
+    setChatMessages((messages) => appendAssistantDelta(messages, "\n\n[Stopped]"));
+    try {
+      await stopChatStream(streamId);
+    } catch (error) {
+      setTestResult(activeProvider ? { ok: false, providerId: activeProvider.id, message: errorMessage(error) } : null);
     }
   }
 
@@ -280,7 +300,7 @@ export default function App() {
         <div className="messages">
           {chatMessages.map((message, index) => <article key={index} className={`message ${message.role}`}><span>{message.role}</span><p>{message.content || (message.role === "assistant" ? "Streaming..." : "")}</p></article>)}
         </div>
-        <footer className="composer"><button><UploadCloud size={18} /> Image</button><input value={chatInput} onChange={(event) => setChatInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) void handleSendChat(); }} placeholder="Send a test message to the selected model..." /><button className="primary" disabled={busy || !selectedSecretId || !masterPassword || !selectedModel || !chatInput.trim()} onClick={handleSendChat}>Send</button></footer>
+        <footer className="composer"><button><UploadCloud size={18} /> Image</button><input value={chatInput} onChange={(event) => setChatInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) void handleSendChat(); }} placeholder="Send a test message to the selected model..." />{currentStreamId ? <button className="danger inline" onClick={handleStopChat}>Stop</button> : <button className="primary" disabled={busy || !selectedSecretId || !masterPassword || !selectedModel || !chatInput.trim()} onClick={handleSendChat}>Send</button>}</footer>
       </section>
 
       <aside className="inspector">
