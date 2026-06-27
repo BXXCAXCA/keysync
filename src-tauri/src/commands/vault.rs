@@ -61,6 +61,18 @@ pub fn vault_list_secret_records(app: tauri::AppHandle) -> std::result::Result<V
 }
 
 #[tauri::command]
+pub fn vault_list_conflict_records(app: tauri::AppHandle) -> std::result::Result<Vec<SecretRecordSummary>, ErrorPayload> {
+    let path = local_vault_path(&app)?;
+    let vault_file = VaultService::new().load_file(&path, LOCAL_DEVICE_ID.to_owned()).map_err(ErrorPayload::from)?;
+    Ok(vault_file
+        .records
+        .iter()
+        .filter(|record| record.display_name.contains("[conflict remote]"))
+        .map(SecretRecordSummary::from)
+        .collect())
+}
+
+#[tauri::command]
 pub fn vault_save_secret_with_master_password(app: tauri::AppHandle, provider_id: String, display_name: String, payload: SecretPayload, master_password: String) -> std::result::Result<SecretRecordSummary, ErrorPayload> {
     let path = local_vault_path(&app)?;
     let service = VaultService::new();
@@ -95,6 +107,28 @@ pub fn vault_delete_secret_record(app: tauri::AppHandle, record_id: String) -> s
     let deleted = crate::vault::store::delete_record(&mut vault_file, parse_record_id(&record_id)?);
     service.save_file(&path, &vault_file).map_err(ErrorPayload::from)?;
     Ok(deleted)
+}
+
+#[tauri::command]
+pub fn vault_rename_secret_record(app: tauri::AppHandle, record_id: String, display_name: String) -> std::result::Result<SecretRecordSummary, ErrorPayload> {
+    if display_name.trim().is_empty() {
+        return Err(ErrorPayload::from(KeySyncError::Vault("display name is required".into())));
+    }
+
+    let path = local_vault_path(&app)?;
+    let service = VaultService::new();
+    let mut vault_file: VaultFile = service.load_file(&path, LOCAL_DEVICE_ID.to_owned()).map_err(ErrorPayload::from)?;
+    let record_uuid = parse_record_id(&record_id)?;
+    let record = vault_file
+        .records
+        .iter_mut()
+        .find(|record| record.id == record_uuid)
+        .ok_or_else(|| ErrorPayload::from(KeySyncError::Vault("secret record not found".into())))?;
+    record.display_name = display_name.trim().to_owned();
+    record.updated_at = chrono::Utc::now();
+    let summary = SecretRecordSummary::from(&*record);
+    service.save_file(&path, &vault_file).map_err(ErrorPayload::from)?;
+    Ok(summary)
 }
 
 fn local_vault_path(app: &tauri::AppHandle) -> std::result::Result<PathBuf, ErrorPayload> {
