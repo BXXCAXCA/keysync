@@ -1,0 +1,31 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "KeySync AI",
+  "version": "0.1.0",
+  "identifier": "app.keysync.ai",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "KeySync AI",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 1120,
+        "minHeight": 720
+      }
+    ],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "LLM API key manager and lightweight chat client",
+    "longDescription": "KeySync AI stores LLM API keys securely, tests providers, syncs encrypted configuration through WebDAV, and provides lightweight chat."
+  }
+}

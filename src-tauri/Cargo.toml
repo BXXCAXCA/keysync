@@ -1,0 +1,26 @@
+[package]
+name = "keysync"
+version = "0.1.0"
+description = "Local-first LLM API key manager and lightweight desktop chat client"
+authors = ["BXXCAXCA"]
+edition = "2021"
+license = "Apache-2.0"
+
+[lib]
+name = "keysync_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+async-trait = "0.1"
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
+rusqlite = { version = "0.32", features = ["bundled"] }
+base64 = "0.22"

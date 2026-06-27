@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.vite/
+src-tauri/target/
+Cargo.lock
+pnpm-lock.yaml
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.sqlite
+*.sqlite3
+*.enc
+*.key
