@@ -32,11 +32,13 @@ Required toolchain:
 - OpenAI-compatible model listing and minimal key test commands.
 - OpenAI Chat reuses the OpenAI-compatible adapter.
 - OpenAI Responses minimal test command.
+- Gemini model listing and minimal `generateContent` key test.
 - OpenAI-compatible streaming chat through Tauri events.
 - Stop generation for active chat streams.
 - Real master-password vault encryption envelope using XChaCha20-Poly1305 and Argon2id.
 - Local encrypted vault record file for saved API keys.
 - Manual WebDAV test/upload/download for the encrypted vault file.
+- WebDAV encrypted config storage, merge downloads, and conflict review UI.
 - Vault, WebDAV, proxy, SQLite, Gemini, and Anthropic module boundaries.
 
 ## Architecture
