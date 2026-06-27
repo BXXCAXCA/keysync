@@ -19,6 +19,7 @@ use crate::providers::{
 };
 
 const CHAT_STREAM_EVENT: &str = "chat-stream-event";
+const ANTHROPIC_VERSION: &str = "2023-06-01";
 static ACTIVE_STREAMS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
 #[tauri::command]
@@ -84,8 +85,22 @@ pub async fn start_chat_stream_with_key(window: tauri::Window, config: ProviderC
             });
             Ok(ChatStartResult { stream_id })
         }
-        ProviderKind::OpenAiResponses | ProviderKind::AnthropicClaude => Err(ErrorPayload::from(KeySyncError::Provider(
-            "streaming chat is currently implemented for OpenAI-compatible and Gemini providers only".into(),
+        ProviderKind::AnthropicClaude => {
+            insert_active_stream(&stream_id)?;
+            tauri::async_runtime::spawn(async move {
+                if let Err(err) = run_anthropic_stream(window.clone(), stream_id_for_task.clone(), config, api_key, request).await {
+                    let _ = emit_stream_event(
+                        &window,
+                        &stream_id_for_task,
+                        ChatStreamEvent::Error { code: "stream_error".into(), message: err.to_string() },
+                    );
+                    let _ = remove_active_stream(&stream_id_for_task);
+                }
+            });
+            Ok(ChatStartResult { stream_id })
+        }
+        ProviderKind::OpenAiResponses => Err(ErrorPayload::from(KeySyncError::Provider(
+            "streaming chat is currently implemented for OpenAI-compatible, Gemini, and Anthropic providers only".into(),
         ))),
     }
 }
@@ -158,6 +173,37 @@ async fn run_gemini_stream(window: tauri::Window, stream_id: String, config: Pro
     }
 
     process_sse_stream(window, stream_id, response, process_gemini_sse_block).await
+}
+
+async fn run_anthropic_stream(window: tauri::Window, stream_id: String, config: ProviderConfig, api_key: String, request: UnifiedChatRequest) -> crate::errors::Result<()> {
+    emit_stream_event(&window, &stream_id, ChatStreamEvent::Start)?;
+
+    let mut body = json!({
+        "model": request.model,
+        "messages": build_anthropic_messages(&request),
+        "stream": true,
+        "temperature": request.temperature.unwrap_or(0.7),
+        "max_tokens": request.max_tokens.unwrap_or(512)
+    });
+    if let Some(system_prompt) = request.system_prompt.as_ref().filter(|value| !value.trim().is_empty()) {
+        body["system"] = json!(system_prompt);
+    }
+
+    let response = build_client()?
+        .post(join_url(&config.base_url, config.chat_path.as_deref().or(Some("/messages"))))
+        .header("x-api-key", api_key)
+        .header("anthropic-version", ANTHROPIC_VERSION)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|err| KeySyncError::Network(format!("Anthropic streaming request failed: {err}")))?;
+
+    if !response.status().is_success() {
+        let _ = remove_active_stream(&stream_id);
+        return Err(parse_error_response(response, "Anthropic streaming request").await);
+    }
+
+    process_sse_stream(window, stream_id, response, process_anthropic_sse_block).await
 }
 
 async fn process_sse_stream(
@@ -238,6 +284,26 @@ fn build_gemini_contents(request: &UnifiedChatRequest) -> Vec<Value> {
     contents
 }
 
+fn build_anthropic_messages(request: &UnifiedChatRequest) -> Vec<Value> {
+    let mut messages = Vec::new();
+    for message in &request.messages {
+        if message.content.trim().is_empty() || message.role == "system" {
+            continue;
+        }
+        let role = if message.role == "assistant" { "assistant" } else { "user" };
+        messages.push(json!({
+            "role": role,
+            "content": message.content
+        }));
+    }
+
+    if messages.is_empty() {
+        messages.push(json!({ "role": "user", "content": "ping" }));
+    }
+
+    messages
+}
+
 fn process_openai_sse_block(window: &tauri::Window, stream_id: &str, block: &str) -> crate::errors::Result<bool> {
     for line in block.lines() {
         let Some(raw_data) = line.strip_prefix("data:") else { continue };
@@ -316,6 +382,51 @@ fn process_gemini_sse_block(window: &tauri::Window, stream_id: &str, block: &str
                 emit_stream_event(window, stream_id, ChatStreamEvent::Done)?;
                 return Ok(true);
             }
+        }
+    }
+
+    Ok(false)
+}
+
+fn process_anthropic_sse_block(window: &tauri::Window, stream_id: &str, block: &str) -> crate::errors::Result<bool> {
+    for line in block.lines() {
+        let Some(raw_data) = line.strip_prefix("data:") else { continue };
+        let data = raw_data.trim();
+        if data.is_empty() {
+            continue;
+        }
+
+        let value: Value = serde_json::from_str(data)
+            .map_err(|err| KeySyncError::Provider(format!("failed to parse Anthropic streaming SSE payload: {err}")))?;
+
+        match value.get("type").and_then(Value::as_str) {
+            Some("content_block_delta") => {
+                if let Some(text) = value.pointer("/delta/text").and_then(Value::as_str).filter(|text| !text.is_empty()) {
+                    emit_stream_event(window, stream_id, ChatStreamEvent::Delta { text: text.to_owned() })?;
+                }
+            }
+            Some("message_delta") => {
+                if let Some(usage) = value.get("usage") {
+                    emit_stream_event(
+                        window,
+                        stream_id,
+                        ChatStreamEvent::Usage {
+                            input_tokens: usage.get("input_tokens").and_then(Value::as_u64),
+                            output_tokens: usage.get("output_tokens").and_then(Value::as_u64),
+                        },
+                    )?;
+                }
+            }
+            Some("message_stop") => {
+                emit_stream_event(window, stream_id, ChatStreamEvent::Done)?;
+                return Ok(true);
+            }
+            Some("error") => {
+                let message = value.pointer("/error/message").and_then(Value::as_str).unwrap_or("Anthropic stream error");
+                emit_stream_event(window, stream_id, ChatStreamEvent::Error { code: "anthropic_stream_error".into(), message: message.to_owned() })?;
+                return Ok(true);
+            }
+            _ => {}
         }
     }
 
