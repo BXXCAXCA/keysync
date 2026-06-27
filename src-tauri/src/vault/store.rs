@@ -52,21 +52,29 @@ pub fn serialize_vault_file(vault_file: &VaultFile) -> Result<String> {
 }
 
 pub fn create_record(provider_id: String, display_name: String, payload: SecretPayload, master_password: &str) -> Result<SecretRecord> {
-    if provider_id.trim().is_empty() {
-        return Err(KeySyncError::Vault("provider id is required".into()));
-    }
-    if display_name.trim().is_empty() {
-        return Err(KeySyncError::Vault("display name is required".into()));
-    }
-    if payload.api_key.trim().is_empty() {
-        return Err(KeySyncError::Vault("API key is required".into()));
-    }
+    validate_record_input(&provider_id, &display_name, &payload)?;
     if master_password.is_empty() {
         return Err(KeySyncError::Vault("master password is required".into()));
     }
 
     let plaintext = serde_json::to_vec(&payload).map_err(|err| KeySyncError::Vault(format!("failed to serialize secret payload: {err}")))?;
     let envelope = crypto::seal_with_master_password(master_password, &plaintext)?;
+    let encrypted_payload = crypto::envelope_to_string(&envelope)?;
+
+    Ok(SecretRecord {
+        id: Uuid::new_v4(),
+        provider_id,
+        display_name,
+        encrypted_payload,
+        updated_at: chrono::Utc::now(),
+    })
+}
+
+pub fn create_record_with_data_key(provider_id: String, display_name: String, payload: SecretPayload, data_key: &[u8]) -> Result<SecretRecord> {
+    validate_record_input(&provider_id, &display_name, &payload)?;
+    let data_key = fixed_data_key(data_key)?;
+    let plaintext = serde_json::to_vec(&payload).map_err(|err| KeySyncError::Vault(format!("failed to serialize secret payload: {err}")))?;
+    let envelope = crypto::seal_with_data_key(&data_key, &plaintext)?;
     let encrypted_payload = crypto::envelope_to_string(&envelope)?;
 
     Ok(SecretRecord {
@@ -85,6 +93,13 @@ pub fn decrypt_record(record: &SecretRecord, master_password: &str) -> Result<Se
 
     let envelope = crypto::envelope_from_string(&record.encrypted_payload)?;
     let plaintext = crypto::open_with_master_password(master_password, &envelope)?;
+    serde_json::from_slice(&plaintext).map_err(|err| KeySyncError::Vault(format!("failed to parse decrypted secret payload: {err}")))
+}
+
+pub fn decrypt_record_with_data_key(record: &SecretRecord, data_key: &[u8]) -> Result<SecretPayload> {
+    let data_key = fixed_data_key(data_key)?;
+    let envelope = crypto::envelope_from_string(&record.encrypted_payload)?;
+    let plaintext = crypto::open_with_data_key(&data_key, &envelope)?;
     serde_json::from_slice(&plaintext).map_err(|err| KeySyncError::Vault(format!("failed to parse decrypted secret payload: {err}")))
 }
 
@@ -133,6 +148,25 @@ pub fn merge_remote_records(local: &mut VaultFile, remote: VaultFile) -> VaultMe
     report
 }
 
+fn validate_record_input(provider_id: &str, display_name: &str, payload: &SecretPayload) -> Result<()> {
+    if provider_id.trim().is_empty() {
+        return Err(KeySyncError::Vault("provider id is required".into()));
+    }
+    if display_name.trim().is_empty() {
+        return Err(KeySyncError::Vault("display name is required".into()));
+    }
+    if payload.api_key.trim().is_empty() {
+        return Err(KeySyncError::Vault("API key is required".into()));
+    }
+    Ok(())
+}
+
+fn fixed_data_key(data_key: &[u8]) -> Result<[u8; 32]> {
+    data_key
+        .try_into()
+        .map_err(|_| KeySyncError::Vault("system keychain data key must be 32 bytes".into()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,5 +200,14 @@ mod tests {
         assert_eq!(report.conflicts, 1);
         assert_eq!(local.records.len(), 2);
         assert!(local.records.iter().any(|item| item.display_name.ends_with("[conflict remote]")));
+    }
+
+    #[test]
+    fn data_key_record_roundtrip() {
+        let data_key = [7_u8; 32];
+        let payload = SecretPayload { api_key: "secret".into(), organization_id: None, project_id: None, custom_headers: Vec::new() };
+        let record = create_record_with_data_key("openai".into(), "system".into(), payload, &data_key).unwrap();
+        let decrypted = decrypt_record_with_data_key(&record, &data_key).unwrap();
+        assert_eq!(decrypted.api_key, "secret");
     }
 }
