@@ -93,4 +93,12 @@ impl VaultService {
     pub fn decrypt_secret_record_with_master_password(&self, record: &SecretRecord, master_password: &str) -> Result<SecretPayload> {
         store::decrypt_record(record, master_password)
     }
+
+    pub fn create_secret_record_with_data_key(&self, provider_id: String, display_name: String, payload: SecretPayload, data_key: &[u8]) -> Result<SecretRecord> {
+        store::create_record_with_data_key(provider_id, display_name, payload, data_key)
+    }
+
+    pub fn decrypt_secret_record_with_data_key(&self, record: &SecretRecord, data_key: &[u8]) -> Result<SecretPayload> {
+        store::decrypt_record_with_data_key(record, data_key)
+    }
 }
