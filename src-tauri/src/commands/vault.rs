@@ -1,14 +1,17 @@
 use std::path::PathBuf;
 
+use rand::RngCore;
 use serde::Serialize;
 use tauri::Manager;
 use uuid::Uuid;
 
 use crate::errors::{ErrorPayload, KeySyncError};
+use crate::vault::keychain;
 use crate::vault::{SecretPayload, SecretRecordSummary, VaultFile, VaultService};
 
 const LOCAL_VAULT_FILE: &str = "vault.local.json";
 const LOCAL_DEVICE_ID: &str = "local-device";
+const SYSTEM_DATA_KEY_BYTES: usize = 32;
 
 #[derive(Debug, Serialize)]
 pub struct VaultSecurityProfile {
@@ -22,6 +25,16 @@ pub struct VaultSecurityProfile {
     pub local_vault_file: &'static str,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemKeychainStatus {
+    pub available: bool,
+    pub has_data_key: bool,
+    pub service: &'static str,
+    pub account: &'static str,
+    pub message: String,
+}
+
 #[tauri::command]
 pub fn vault_security_profile() -> VaultSecurityProfile {
     VaultSecurityProfile {
@@ -31,9 +44,66 @@ pub fn vault_security_profile() -> VaultSecurityProfile {
         sync_file_policy: "encrypted_json_only",
         envelope_algorithm: "XChaCha20-Poly1305",
         kdf_algorithm: "Argon2id",
-        system_keychain_status: "interface_defined_backend_pending",
+        system_keychain_status: "system_keychain_backend_wired",
         local_vault_file: LOCAL_VAULT_FILE,
     }
+}
+
+#[tauri::command]
+pub fn vault_system_keychain_status() -> SystemKeychainStatus {
+    match keychain::load_data_key() {
+        Ok(secret) => SystemKeychainStatus {
+            available: true,
+            has_data_key: !secret.is_empty(),
+            service: keychain::KEYCHAIN_SERVICE,
+            account: keychain::DATA_KEY_ACCOUNT,
+            message: "System keychain is available and data key exists.".into(),
+        },
+        Err(err) => SystemKeychainStatus {
+            available: false,
+            has_data_key: false,
+            service: keychain::KEYCHAIN_SERVICE,
+            account: keychain::DATA_KEY_ACCOUNT,
+            message: err.to_string(),
+        },
+    }
+}
+
+#[tauri::command]
+pub fn vault_init_system_data_key() -> std::result::Result<SystemKeychainStatus, ErrorPayload> {
+    if let Ok(secret) = keychain::load_data_key() {
+        return Ok(SystemKeychainStatus {
+            available: true,
+            has_data_key: !secret.is_empty(),
+            service: keychain::KEYCHAIN_SERVICE,
+            account: keychain::DATA_KEY_ACCOUNT,
+            message: "Existing system keychain data key found.".into(),
+        });
+    }
+
+    let mut data_key = vec![0_u8; SYSTEM_DATA_KEY_BYTES];
+    rand::thread_rng().fill_bytes(&mut data_key);
+    keychain::save_data_key(&data_key).map_err(ErrorPayload::from)?;
+
+    Ok(SystemKeychainStatus {
+        available: true,
+        has_data_key: true,
+        service: keychain::KEYCHAIN_SERVICE,
+        account: keychain::DATA_KEY_ACCOUNT,
+        message: "Created and saved a new system keychain data key.".into(),
+    })
+}
+
+#[tauri::command]
+pub fn vault_delete_system_data_key() -> std::result::Result<SystemKeychainStatus, ErrorPayload> {
+    keychain::delete_data_key().map_err(ErrorPayload::from)?;
+    Ok(SystemKeychainStatus {
+        available: true,
+        has_data_key: false,
+        service: keychain::KEYCHAIN_SERVICE,
+        account: keychain::DATA_KEY_ACCOUNT,
+        message: "Deleted system keychain data key.".into(),
+    })
 }
 
 #[tauri::command]
