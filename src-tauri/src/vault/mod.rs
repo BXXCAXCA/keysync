@@ -1,5 +1,8 @@
 pub mod crypto;
 pub mod keychain;
+pub mod store;
+
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -34,6 +37,26 @@ pub struct SecretRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SecretRecordSummary {
+    pub id: Uuid,
+    pub provider_id: String,
+    pub display_name: String,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl From<&SecretRecord> for SecretRecordSummary {
+    fn from(value: &SecretRecord) -> Self {
+        Self {
+            id: value.id,
+            provider_id: value.provider_id.clone(),
+            display_name: value.display_name.clone(),
+            updated_at: value.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VaultFile {
     pub version: u32,
     pub device_id: String,
@@ -53,5 +76,21 @@ impl VaultService {
     pub fn decrypt_from_sync_with_master_password(&self, master_password: &str, ciphertext: &str) -> Result<Vec<u8>> {
         let envelope = crypto::envelope_from_string(ciphertext)?;
         crypto::open_with_master_password(master_password, &envelope)
+    }
+
+    pub fn load_file(&self, path: &Path, device_id: String) -> Result<VaultFile> {
+        store::load_or_empty(path, device_id)
+    }
+
+    pub fn save_file(&self, path: &Path, vault_file: &VaultFile) -> Result<()> {
+        store::save(path, vault_file)
+    }
+
+    pub fn create_secret_record_with_master_password(&self, provider_id: String, display_name: String, payload: SecretPayload, master_password: &str) -> Result<SecretRecord> {
+        store::create_record(provider_id, display_name, payload, master_password)
+    }
+
+    pub fn decrypt_secret_record_with_master_password(&self, record: &SecretRecord, master_password: &str) -> Result<SecretPayload> {
+        store::decrypt_record(record, master_password)
     }
 }

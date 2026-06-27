@@ -50,6 +50,20 @@ export interface TestResult {
   message: string;
 }
 
+export interface SecretPayload {
+  apiKey: string;
+  organizationId?: string;
+  projectId?: string;
+  customHeaders: Array<[string, string]>;
+}
+
+export interface SecretRecordSummary {
+  id: string;
+  providerId: string;
+  displayName: string;
+  updatedAt: string;
+}
+
 export interface VaultSecurityProfile {
   defaultMode: string;
   optionalMode: string;
@@ -58,6 +72,7 @@ export interface VaultSecurityProfile {
   envelopeAlgorithm: string;
   kdfAlgorithm: string;
   systemKeychainStatus: string;
+  localVaultFile: string;
 }
 
 export interface ErrorPayload {

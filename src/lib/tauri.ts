@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ModelInfo, ProviderConfig, ProviderTemplate, TestResult, VaultSecurityProfile } from "../types";
+import type { ModelInfo, ProviderConfig, ProviderTemplate, SecretPayload, SecretRecordSummary, TestResult, VaultSecurityProfile } from "../types";
 import { providerTemplates as fallbackTemplates } from "../data/providerTemplates";
 
 export async function loadProviderTemplates(): Promise<ProviderTemplate[]> {
@@ -61,4 +61,20 @@ export async function vaultEncryptWithMasterPassword(plaintext: string, masterPa
 
 export async function vaultDecryptWithMasterPassword(envelope: string, masterPassword: string): Promise<string> {
   return await invoke<string>("vault_decrypt_with_master_password", { envelope, masterPassword });
+}
+
+export async function vaultListSecretRecords(): Promise<SecretRecordSummary[]> {
+  return await invoke<SecretRecordSummary[]>("vault_list_secret_records");
+}
+
+export async function vaultSaveSecretWithMasterPassword(providerId: string, displayName: string, payload: SecretPayload, masterPassword: string): Promise<SecretRecordSummary> {
+  return await invoke<SecretRecordSummary>("vault_save_secret_with_master_password", { providerId, displayName, payload, masterPassword });
+}
+
+export async function vaultDecryptSecretWithMasterPassword(recordId: string, masterPassword: string): Promise<SecretPayload> {
+  return await invoke<SecretPayload>("vault_decrypt_secret_with_master_password", { recordId, masterPassword });
+}
+
+export async function vaultDeleteSecretRecord(recordId: string): Promise<boolean> {
+  return await invoke<boolean>("vault_delete_secret_record", { recordId });
 }
