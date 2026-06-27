@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { KeyRound, MessageSquareText, RefreshCw, Server, ShieldCheck, UploadCloud } from "lucide-react";
-import type { ChatStreamPayload, ModelInfo, ProviderTemplate, SecretRecordSummary, TestResult } from "./types";
+import type { ChatStreamPayload, ModelInfo, ProviderTemplate, SecretRecordSummary, TestResult, WebDavConfig } from "./types";
 import {
   getAppStatus,
   listModelsWithKey,
@@ -14,6 +14,9 @@ import {
   vaultDeleteSecretRecord,
   vaultListSecretRecords,
   vaultSaveSecretWithMasterPassword,
+  webdavDownloadRemoteVault,
+  webdavTestConnection,
+  webdavUploadLocalVault,
 } from "./lib/tauri";
 
 type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
@@ -56,6 +59,8 @@ export default function App() {
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(initialMessages);
   const [currentStreamId, setCurrentStreamId] = useState<string | null>(null);
+  const [webdavConfig, setWebdavConfig] = useState<WebDavConfig>({ endpoint: "", username: "", password: "", remoteDir: "KeySyncAI" });
+  const [syncMessage, setSyncMessage] = useState("");
   const activeStreamIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -235,6 +240,35 @@ export default function App() {
     }
   }
 
+  async function handleWebDavTest() {
+    await runWebDavAction(async () => webdavTestConnection(webdavConfig));
+  }
+
+  async function handleWebDavUpload() {
+    await runWebDavAction(async () => webdavUploadLocalVault(webdavConfig));
+  }
+
+  async function handleWebDavDownload() {
+    await runWebDavAction(async () => {
+      const result = await webdavDownloadRemoteVault(webdavConfig, true);
+      await reloadVaultRecords();
+      return result;
+    });
+  }
+
+  async function runWebDavAction(action: () => Promise<{ message: string; bytes: number; remoteUrl: string }>) {
+    setBusy(true);
+    setSyncMessage("");
+    try {
+      const result = await action();
+      setSyncMessage(`${result.message}. Bytes: ${result.bytes}. Remote: ${result.remoteUrl}`);
+    } catch (error) {
+      setSyncMessage(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function unlockSelectedSecret() {
     if (!activeProvider || !selectedSecretId || !masterPassword) return null;
     setBusy(true);
@@ -306,6 +340,7 @@ export default function App() {
       <aside className="inspector">
         <section className="card"><h2><KeyRound size={16} /> API key vault</h2><p>Keys are stored as encrypted local vault records. Master password unlock is required before testing a saved key.</p><label>Master password<input type="password" value={masterPassword} onChange={(event) => setMasterPassword(event.target.value)} placeholder="Required to save or unlock" /></label><label>Saved key<select value={selectedSecretId} onChange={(event) => setSelectedSecretId(event.target.value)}><option value="">Select saved key</option>{providerSecrets.map((secret) => <option key={secret.id} value={secret.id}>{secret.displayName}</option>)}</select></label><div className="button-row"><button onClick={handleListModelsWithSavedKey} disabled={busy || !selectedSecretId || !masterPassword}>List saved</button><button className="primary" onClick={handleTestProviderWithSavedKey} disabled={busy || !selectedSecretId || !masterPassword}>Test saved</button></div><button className="danger" onClick={handleDeleteSavedKey} disabled={busy || !selectedSecretId}>Delete saved key</button>{testResult && <p className={testResult.ok ? "ok" : "warn"}>{testResult.message}</p>}</section>
         <section className="card"><h2>Save new key</h2><label>Display name<input value={keyName} onChange={(event) => setKeyName(event.target.value)} placeholder="Personal OpenAI key" /></label><label>API Key<input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-... or provider token" /></label><div className="button-row"><button onClick={handleListModelsWithRawKey} disabled={busy || !apiKey.trim()}>List raw</button><button onClick={handleTestProviderWithRawKey} disabled={busy || !apiKey.trim()}>Test raw</button></div><button className="primary full" onClick={handleSaveKey} disabled={busy || !apiKey.trim() || !masterPassword}>Encrypt and save</button></section>
+        <section className="card"><h2>WebDAV sync</h2><p>Manual MVP sync for the encrypted local vault file. Download currently overwrites the local vault.</p><label>Endpoint<input value={webdavConfig.endpoint} onChange={(event) => setWebdavConfig({ ...webdavConfig, endpoint: event.target.value })} placeholder="https://dav.example.com/remote.php/dav/files/user" /></label><label>Remote directory<input value={webdavConfig.remoteDir} onChange={(event) => setWebdavConfig({ ...webdavConfig, remoteDir: event.target.value })} placeholder="KeySyncAI" /></label><label>Username<input value={webdavConfig.username} onChange={(event) => setWebdavConfig({ ...webdavConfig, username: event.target.value })} /></label><label>Password<input type="password" value={webdavConfig.password} onChange={(event) => setWebdavConfig({ ...webdavConfig, password: event.target.value })} /></label><div className="button-row"><button onClick={handleWebDavTest} disabled={busy || !webdavConfig.endpoint}>Test</button><button onClick={handleWebDavUpload} disabled={busy || !webdavConfig.endpoint}>Upload</button></div><button className="primary full" onClick={handleWebDavDownload} disabled={busy || !webdavConfig.endpoint}>Download and overwrite local vault</button>{syncMessage && <p className="ok">{syncMessage}</p>}</section>
         <section className="card"><h2>Active provider</h2>{activeProvider ? <dl><dt>Name</dt><dd>{activeProvider.name}</dd><dt>Base URL</dt><dd>{activeProvider.baseUrl}</dd><dt>Streaming</dt><dd>{activeProvider.supportsStreaming ? "Supported" : "Not supported"}</dd><dt>Images</dt><dd>{activeProvider.supportsImages ? "Supported" : "Not supported"}</dd></dl> : <p>No provider loaded.</p>}</section>
         <section className="card"><h2>Models</h2>{models.length ? <><label>Selected model<select value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)}>{models.map((model) => <option key={model.id} value={model.id}>{model.displayName}</option>)}</select></label><div className="model-list">{models.slice(0, 8).map((model) => <span key={model.id}>{model.displayName}<small>{model.capabilities.join(", ")}</small></span>)}</div></> : <p>No models loaded yet.</p>}</section>
         <section className="card"><h2>Model params</h2><label>System prompt<textarea value={chatMessages.find((message) => message.role === "system")?.content ?? ""} onChange={(event) => setChatMessages((messages) => [{ role: "system", content: event.target.value }, ...messages.filter((message) => message.role !== "system")])} placeholder="You are a helpful assistant." /></label><label>Temperature<input type="number" defaultValue="0.7" step="0.1" /></label><label>Context length<input type="number" defaultValue="8192" /></label></section>
