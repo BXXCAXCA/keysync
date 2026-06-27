@@ -15,6 +15,7 @@ pub fn run() {
             commands::providers::list_models_with_key,
             commands::providers::test_provider_with_key,
             commands::providers::start_chat_stream_with_key,
+            commands::providers::stop_chat_stream,
             commands::vault::vault_security_profile,
             commands::vault::vault_encrypt_with_master_password,
             commands::vault::vault_decrypt_with_master_password,
