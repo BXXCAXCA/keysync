@@ -133,7 +133,7 @@ fn build_openai_messages(request: &UnifiedChatRequest) -> Vec<Value> {
     }
 
     for message in &request.messages {
-        messages.push(json!({ "role": message.role, "content": message.content }));
+        messages.push(json!({ "role": &message.role, "content": &message.content }));
     }
 
     messages
