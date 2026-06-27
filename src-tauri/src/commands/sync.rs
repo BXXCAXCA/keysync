@@ -1,15 +1,16 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
 use crate::errors::{ErrorPayload, KeySyncError};
 use crate::sync::{WebDavConfig, WebDavSyncResult, WebDavSyncService};
-use crate::vault::VaultService;
+use crate::vault::{store, VaultFile, VaultService};
 
 const LOCAL_VAULT_FILE: &str = "vault.local.json";
 const WEBDAV_CONFIG_FILE: &str = "webdav.config.json";
+const LOCAL_DEVICE_ID: &str = "local-device";
 
 #[derive(Debug, Serialize)]
 pub struct WebDavSyncProfile {
@@ -58,7 +59,7 @@ pub fn webdav_sync_profile() -> WebDavSyncProfile {
     WebDavSyncProfile {
         default_sync: vec!["encrypted_keys", "provider_config", "model_preferences", "proxy_settings"],
         optional_sync: vec!["conversation_history"],
-        conflict_policy: "manual_upload_download_first_auto_merge_later",
+        conflict_policy: "merge_by_record_id_keep_conflict_copies",
         remote_vault_file: "vault.sync.json.enc",
         local_config_file: WEBDAV_CONFIG_FILE,
     }
@@ -153,13 +154,7 @@ async fn upload_local_vault_with_config(app: &tauri::AppHandle, config: &WebDavC
 
 async fn download_remote_vault_with_config(app: &tauri::AppHandle, config: &WebDavConfig, overwrite: bool) -> std::result::Result<WebDavSyncResult, ErrorPayload> {
     let path = local_vault_path(app)?;
-    if path.exists() && !overwrite {
-        return Err(ErrorPayload::from(KeySyncError::Sync(
-            "local vault already exists; pass overwrite=true to replace it".into(),
-        )));
-    }
-
-    let (result, content) = WebDavSyncService::new()
+    let (mut result, content) = WebDavSyncService::new()
         .map_err(ErrorPayload::from)?
         .download_vault(config)
         .await
@@ -170,9 +165,31 @@ async fn download_remote_vault_with_config(app: &tauri::AppHandle, config: &WebD
             .map_err(|err| ErrorPayload::from(KeySyncError::Sync(format!("failed to create app data directory: {err}"))))?;
     }
 
-    fs::write(&path, content)
-        .map_err(|err| ErrorPayload::from(KeySyncError::Sync(format!("failed to write downloaded vault: {err}"))))?;
+    if overwrite || !path.exists() {
+        backup_existing_file(&path)?;
+        fs::write(&path, content)
+            .map_err(|err| ErrorPayload::from(KeySyncError::Sync(format!("failed to write downloaded vault: {err}"))))?;
+        result.message = if overwrite { "Remote vault downloaded and local vault overwritten after backup".into() } else { "Remote vault downloaded as local vault".into() };
+        return Ok(result);
+    }
 
+    let remote_content = String::from_utf8(content)
+        .map_err(|_| ErrorPayload::from(KeySyncError::Sync("downloaded vault is not valid UTF-8 JSON".into())))?;
+    let remote_vault = store::parse_vault_file(&remote_content).map_err(ErrorPayload::from)?;
+    let mut local_vault = VaultService::new()
+        .load_file(&path, LOCAL_DEVICE_ID.to_owned())
+        .map_err(ErrorPayload::from)?;
+
+    backup_existing_file(&path)?;
+    let merge_report = store::merge_remote_records(&mut local_vault, remote_vault);
+    local_vault.device_id = LOCAL_DEVICE_ID.to_owned();
+    local_vault.version = 1;
+    VaultService::new().save_file(&path, &local_vault).map_err(ErrorPayload::from)?;
+
+    result.message = format!(
+        "Remote vault merged into local vault. Added: {}, unchanged: {}, conflicts kept: {}",
+        merge_report.added, merge_report.unchanged, merge_report.conflicts
+    );
     Ok(result)
 }
 
@@ -235,6 +252,19 @@ fn save_webdav_config_file(app: &tauri::AppHandle, config: &SavedWebDavConfigFil
         .map_err(|err| ErrorPayload::from(KeySyncError::Sync(format!("failed to serialize WebDAV config: {err}"))))?;
     fs::write(path, content)
         .map_err(|err| ErrorPayload::from(KeySyncError::Sync(format!("failed to write saved WebDAV config: {err}"))))
+}
+
+fn backup_existing_file(path: &Path) -> std::result::Result<Option<PathBuf>, ErrorPayload> {
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let parent = path.parent().ok_or_else(|| ErrorPayload::from(KeySyncError::Sync("local vault path has no parent directory".into())))?;
+    let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
+    let backup_path = parent.join(format!("vault.local.{timestamp}.backup.json"));
+    fs::copy(path, &backup_path)
+        .map_err(|err| ErrorPayload::from(KeySyncError::Sync(format!("failed to backup local vault before sync: {err}"))))?;
+    Ok(Some(backup_path))
 }
 
 fn local_vault_path(app: &tauri::AppHandle) -> std::result::Result<PathBuf, ErrorPayload> {
