@@ -113,6 +113,14 @@ export interface WebDavConfig {
   remoteDir: string;
 }
 
+export interface WebDavConfigSummary {
+  endpoint: string;
+  username: string;
+  remoteDir: string;
+  hasPassword: boolean;
+  updatedAt: string;
+}
+
 export interface WebDavSyncResult {
   ok: boolean;
   operation: string;
