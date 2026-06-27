@@ -156,6 +156,20 @@ pub fn vault_save_secret_with_master_password(app: tauri::AppHandle, provider_id
 }
 
 #[tauri::command]
+pub fn vault_save_secret_with_system_keychain(app: tauri::AppHandle, provider_id: String, display_name: String, payload: SecretPayload) -> std::result::Result<SecretRecordSummary, ErrorPayload> {
+    let data_key = load_or_create_system_data_key()?;
+    let path = local_vault_path(&app)?;
+    let service = VaultService::new();
+    let mut vault_file = service.load_file(&path, LOCAL_DEVICE_ID.to_owned()).map_err(ErrorPayload::from)?;
+    let record = service
+        .create_secret_record_with_data_key(provider_id, display_name, payload, &data_key)
+        .map_err(ErrorPayload::from)?;
+    crate::vault::store::upsert_record(&mut vault_file, record.clone());
+    service.save_file(&path, &vault_file).map_err(ErrorPayload::from)?;
+    Ok(SecretRecordSummary::from(&record))
+}
+
+#[tauri::command]
 pub fn vault_decrypt_secret_with_master_password(app: tauri::AppHandle, record_id: String, master_password: String) -> std::result::Result<SecretPayload, ErrorPayload> {
     let path = local_vault_path(&app)?;
     let service = VaultService::new();
@@ -167,6 +181,21 @@ pub fn vault_decrypt_secret_with_master_password(app: tauri::AppHandle, record_i
         .find(|record| record.id == record_uuid)
         .ok_or_else(|| ErrorPayload::from(KeySyncError::Vault("secret record not found".into())))?;
     service.decrypt_secret_record_with_master_password(record, &master_password).map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub fn vault_decrypt_secret_with_system_keychain(app: tauri::AppHandle, record_id: String) -> std::result::Result<SecretPayload, ErrorPayload> {
+    let data_key = keychain::load_data_key().map_err(ErrorPayload::from)?;
+    let path = local_vault_path(&app)?;
+    let service = VaultService::new();
+    let vault_file = service.load_file(&path, LOCAL_DEVICE_ID.to_owned()).map_err(ErrorPayload::from)?;
+    let record_uuid = parse_record_id(&record_id)?;
+    let record = vault_file
+        .records
+        .iter()
+        .find(|record| record.id == record_uuid)
+        .ok_or_else(|| ErrorPayload::from(KeySyncError::Vault("secret record not found".into())))?;
+    service.decrypt_secret_record_with_data_key(record, &data_key).map_err(ErrorPayload::from)
 }
 
 #[tauri::command]
@@ -199,6 +228,19 @@ pub fn vault_rename_secret_record(app: tauri::AppHandle, record_id: String, disp
     let summary = SecretRecordSummary::from(&*record);
     service.save_file(&path, &vault_file).map_err(ErrorPayload::from)?;
     Ok(summary)
+}
+
+fn load_or_create_system_data_key() -> std::result::Result<Vec<u8>, ErrorPayload> {
+    match keychain::load_data_key() {
+        Ok(secret) if secret.len() == SYSTEM_DATA_KEY_BYTES => Ok(secret),
+        Ok(_) => Err(ErrorPayload::from(KeySyncError::Vault("system keychain data key has invalid length".into()))),
+        Err(_) => {
+            let mut data_key = vec![0_u8; SYSTEM_DATA_KEY_BYTES];
+            rand::thread_rng().fill_bytes(&mut data_key);
+            keychain::save_data_key(&data_key).map_err(ErrorPayload::from)?;
+            Ok(data_key)
+        }
+    }
 }
 
 fn local_vault_path(app: &tauri::AppHandle) -> std::result::Result<PathBuf, ErrorPayload> {
