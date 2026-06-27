@@ -65,6 +65,10 @@ export async function startChatStreamWithKey(config: ProviderConfig, apiKey: str
   return await invoke<ChatStartResult>("start_chat_stream_with_key", { config, apiKey, request });
 }
 
+export async function stopChatStream(streamId: string): Promise<boolean> {
+  return await invoke<boolean>("stop_chat_stream", { streamId });
+}
+
 export async function getVaultSecurityProfile(): Promise<VaultSecurityProfile> {
   return await invoke<VaultSecurityProfile>("vault_security_profile");
 }
