@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { KeyRound, MessageSquareText, RefreshCw, Server, ShieldCheck, UploadCloud } from "lucide-react";
-import type { ChatStreamPayload, ModelInfo, ProviderTemplate, SecretRecordSummary, TestResult, WebDavConfig, WebDavConfigSummary } from "./types";
+import type { ChatStreamPayload, ModelInfo, ProviderTemplate, SecretRecordSummary, SystemKeychainStatus, TestResult, WebDavConfig, WebDavConfigSummary } from "./types";
 import {
   getAppStatus,
   listModelsWithKey,
@@ -12,10 +12,13 @@ import {
   testProviderWithKey,
   vaultDecryptSecretWithMasterPassword,
   vaultDeleteSecretRecord,
+  vaultDeleteSystemDataKey,
+  vaultInitSystemDataKey,
   vaultListConflictRecords,
   vaultListSecretRecords,
   vaultRenameSecretRecord,
   vaultSaveSecretWithMasterPassword,
+  vaultSystemKeychainStatus,
   webdavDownloadRemoteVault,
   webdavDownloadRemoteVaultWithSavedConfig,
   webdavLoadSavedConfigSummary,
@@ -72,6 +75,7 @@ export default function App() {
   const [webdavConfig, setWebdavConfig] = useState<WebDavConfig>({ endpoint: "", username: "", password: "", remoteDir: "KeySyncAI" });
   const [savedWebdavSummary, setSavedWebdavSummary] = useState<WebDavConfigSummary | null>(null);
   const [syncMessage, setSyncMessage] = useState("");
+  const [keychainStatus, setKeychainStatus] = useState<SystemKeychainStatus | null>(null);
   const activeStreamIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -79,6 +83,7 @@ export default function App() {
     getAppStatus().then(setStatus);
     reloadVaultRecords();
     reloadSavedWebDavSummary();
+    reloadSystemKeychainStatus();
   }, []);
 
   useEffect(() => {
@@ -152,6 +157,36 @@ export default function App() {
     } catch {
       setSavedSecrets([]);
       setConflictRecords([]);
+    }
+  }
+
+  async function reloadSystemKeychainStatus() {
+    try {
+      setKeychainStatus(await vaultSystemKeychainStatus());
+    } catch (error) {
+      setKeychainStatus({ available: false, hasDataKey: false, service: "app.keysync.ai", account: "vault-data-key", message: errorMessage(error) });
+    }
+  }
+
+  async function handleInitSystemKeychain() {
+    setBusy(true);
+    try {
+      setKeychainStatus(await vaultInitSystemDataKey());
+    } catch (error) {
+      setKeychainStatus({ available: false, hasDataKey: false, service: "app.keysync.ai", account: "vault-data-key", message: errorMessage(error) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteSystemKeychain() {
+    setBusy(true);
+    try {
+      setKeychainStatus(await vaultDeleteSystemDataKey());
+    } catch (error) {
+      setKeychainStatus({ available: false, hasDataKey: false, service: "app.keysync.ai", account: "vault-data-key", message: errorMessage(error) });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -433,7 +468,7 @@ export default function App() {
       </aside>
 
       <section className="chat-panel">
-        <header><div><h1>Lightweight chat client</h1><p>OpenAI-compatible streaming chat is now wired through Tauri events.</p></div><button className="secondary" onClick={handleListModelsWithSavedKey} disabled={busy || !selectedSecretId || !masterPassword}><RefreshCw size={16} /> Refresh models</button></header>
+        <header><div><h1>Lightweight chat client</h1><p>Streaming chat is wired for OpenAI-compatible, Responses, Gemini, and Anthropic providers.</p></div><button className="secondary" onClick={handleListModelsWithSavedKey} disabled={busy || !selectedSecretId || !masterPassword}><RefreshCw size={16} /> Refresh models</button></header>
         <div className="messages">
           {chatMessages.map((message, index) => <article key={index} className={`message ${message.role}`}><span>{message.role}</span><p>{message.content || (message.role === "assistant" ? "Streaming..." : "")}</p></article>)}
         </div>
@@ -442,6 +477,7 @@ export default function App() {
 
       <aside className="inspector">
         <section className="card"><h2><KeyRound size={16} /> API key vault</h2><p>Keys are stored as encrypted local vault records. Master password unlock is required before testing a saved key.</p><label>Master password<input type="password" value={masterPassword} onChange={(event) => setMasterPassword(event.target.value)} placeholder="Required to save or unlock" /></label><label>Saved key<select value={selectedSecretId} onChange={(event) => setSelectedSecretId(event.target.value)}><option value="">Select saved key</option>{providerSecrets.map((secret) => <option key={secret.id} value={secret.id}>{secret.displayName}</option>)}</select></label><div className="button-row"><button onClick={handleListModelsWithSavedKey} disabled={busy || !selectedSecretId || !masterPassword}>List saved</button><button className="primary" onClick={handleTestProviderWithSavedKey} disabled={busy || !selectedSecretId || !masterPassword}>Test saved</button></div><button className="danger" onClick={handleDeleteSavedKey} disabled={busy || !selectedSecretId}>Delete saved key</button>{testResult && <p className={testResult.ok ? "ok" : "warn"}>{testResult.message}</p>}</section>
+        <section className="card"><h2>System keychain</h2><p>Default vault mode now has an OS keychain backend for the local data key. Saved key records still use master-password envelopes until migration is added.</p>{keychainStatus && <p className={keychainStatus.available ? "ok" : "warn"}>{keychainStatus.message}</p>}<dl><dt>Service</dt><dd>{keychainStatus?.service ?? "app.keysync.ai"}</dd><dt>Account</dt><dd>{keychainStatus?.account ?? "vault-data-key"}</dd><dt>Data key</dt><dd>{keychainStatus?.hasDataKey ? "Present" : "Missing"}</dd></dl><div className="button-row"><button onClick={reloadSystemKeychainStatus} disabled={busy}>Refresh</button><button className="primary" onClick={handleInitSystemKeychain} disabled={busy}>Init data key</button></div><button className="danger" onClick={handleDeleteSystemKeychain} disabled={busy || !keychainStatus?.hasDataKey}>Delete data key</button></section>
         <section className="card"><h2>Save new key</h2><label>Display name<input value={keyName} onChange={(event) => setKeyName(event.target.value)} placeholder="Personal OpenAI key" /></label><label>API Key<input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-... or provider token" /></label><div className="button-row"><button onClick={handleListModelsWithRawKey} disabled={busy || !apiKey.trim()}>List raw</button><button onClick={handleTestProviderWithRawKey} disabled={busy || !apiKey.trim()}>Test raw</button></div><button className="primary full" onClick={handleSaveKey} disabled={busy || !apiKey.trim() || !masterPassword}>Encrypt and save</button></section>
         <section className="card"><h2>WebDAV sync</h2><p>Manual MVP sync for the encrypted local vault file. Downloads now merge by record ID and keep conflict copies.</p>{savedWebdavSummary && <p className="ok">Saved: {savedWebdavSummary.username} @ {savedWebdavSummary.endpoint}/{savedWebdavSummary.remoteDir}</p>}<label>Endpoint<input value={webdavConfig.endpoint} onChange={(event) => setWebdavConfig({ ...webdavConfig, endpoint: event.target.value })} placeholder="https://dav.example.com/remote.php/dav/files/user" /></label><label>Remote directory<input value={webdavConfig.remoteDir} onChange={(event) => setWebdavConfig({ ...webdavConfig, remoteDir: event.target.value })} placeholder="KeySyncAI" /></label><label>Username<input value={webdavConfig.username} onChange={(event) => setWebdavConfig({ ...webdavConfig, username: event.target.value })} /></label><label>Password<input type="password" value={webdavConfig.password} onChange={(event) => setWebdavConfig({ ...webdavConfig, password: event.target.value })} placeholder="Required only to save raw config" /></label><div className="button-row"><button onClick={handleWebDavTest} disabled={busy || !webdavConfig.endpoint}>Test raw</button><button onClick={handleSaveWebDavConfig} disabled={busy || !webdavConfig.endpoint || !masterPassword}>Save encrypted</button></div><div className="button-row"><button onClick={handleWebDavUpload} disabled={busy || !webdavConfig.endpoint}>Upload raw</button><button onClick={handleWebDavDownload} disabled={busy || !webdavConfig.endpoint}>Merge download raw</button></div><div className="button-row"><button onClick={handleSavedWebDavTest} disabled={busy || !savedWebdavSummary || !masterPassword}>Test saved</button><button onClick={handleUnlockSavedWebDavConfig} disabled={busy || !savedWebdavSummary || !masterPassword}>Unlock to form</button></div><div className="button-row"><button onClick={handleSavedWebDavUpload} disabled={busy || !savedWebdavSummary || !masterPassword}>Upload saved</button><button className="primary" onClick={handleSavedWebDavDownload} disabled={busy || !savedWebdavSummary || !masterPassword}>Merge download saved</button></div>{syncMessage && <p className="ok">{syncMessage}</p>}</section>
         {conflictRecords.length > 0 && <section className="card"><h2>Conflict review</h2><p>Remote conflict copies were preserved during merge. Rename to keep them, or delete duplicate copies.</p><div className="model-list">{conflictRecords.map((record) => <span key={record.id}>{record.displayName}<small>{record.providerId} · {record.updatedAt}</small><input value={conflictRename[record.id] ?? record.displayName.replace(" [conflict remote]", "")} onChange={(event) => setConflictRename({ ...conflictRename, [record.id]: event.target.value })} /><div className="button-row"><button onClick={() => void handleAcceptConflict(record)} disabled={busy}>Keep renamed</button><button className="danger" onClick={() => void deleteRecord(record.id, "Deleted conflict copy.")} disabled={busy}>Delete conflict</button></div></span>)}</div></section>}
