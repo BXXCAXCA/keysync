@@ -24,6 +24,9 @@ pub fn run() {
             commands::vault::vault_decrypt_secret_with_master_password,
             commands::vault::vault_delete_secret_record,
             commands::sync::webdav_sync_profile,
+            commands::sync::webdav_test_connection,
+            commands::sync::webdav_upload_local_vault,
+            commands::sync::webdav_download_remote_vault,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run KeySync AI");
