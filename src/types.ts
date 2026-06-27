@@ -50,6 +50,37 @@ export interface TestResult {
   message: string;
 }
 
+export interface UnifiedMessage {
+  role: "system" | "user" | "assistant" | string;
+  content: string;
+  images: Array<{ mediaType: string; dataBase64: string }>;
+}
+
+export interface UnifiedChatRequest {
+  model: string;
+  systemPrompt?: string;
+  messages: UnifiedMessage[];
+  temperature?: number;
+  maxTokens?: number;
+  stream: boolean;
+}
+
+export type ChatStreamEvent =
+  | { type: "start" }
+  | { type: "delta"; text: string }
+  | { type: "usage"; inputTokens?: number; outputTokens?: number }
+  | { type: "done" }
+  | { type: "error"; code: string; message: string };
+
+export interface ChatStreamPayload {
+  streamId: string;
+  event: ChatStreamEvent;
+}
+
+export interface ChatStartResult {
+  streamId: string;
+}
+
 export interface SecretPayload {
   apiKey: string;
   organizationId?: string;
