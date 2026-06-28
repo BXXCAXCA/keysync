@@ -1,7 +1,7 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-use futures_util::StreamExt;
+use futures_util::{future::{AbortHandle, Abortable}, StreamExt};
 use serde_json::{json, Value};
 use tauri::Emitter;
 use uuid::Uuid;
@@ -20,7 +20,7 @@ use crate::providers::{
 
 const CHAT_STREAM_EVENT: &str = "chat-stream-event";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
-static ACTIVE_STREAMS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+static ACTIVE_STREAMS: OnceLock<Mutex<HashMap<String, AbortHandle>>> = OnceLock::new();
 
 #[tauri::command]
 pub fn list_provider_templates() -> Vec<ProviderTemplate> {
@@ -55,54 +55,58 @@ pub async fn test_provider_with_key(config: ProviderConfig, api_key: String, mod
 pub async fn start_chat_stream_with_key(window: tauri::Window, config: ProviderConfig, api_key: String, request: UnifiedChatRequest) -> std::result::Result<ChatStartResult, ErrorPayload> {
     let stream_id = Uuid::new_v4().to_string();
     let stream_id_for_task = stream_id.clone();
+    let (abort_handle, abort_registration) = AbortHandle::new_pair();
+    insert_active_stream(&stream_id, abort_handle)?;
 
     match config.kind {
         ProviderKind::OpenAiChat | ProviderKind::OpenAiCompatible | ProviderKind::Custom => {
-            insert_active_stream(&stream_id)?;
             tauri::async_runtime::spawn(async move {
-                if let Err(err) = run_openai_compatible_stream(window.clone(), stream_id_for_task.clone(), config, api_key, request).await {
-                    let _ = emit_stream_event(&window, &stream_id_for_task, ChatStreamEvent::Error { code: "stream_error".into(), message: err.to_string() });
-                    let _ = remove_active_stream(&stream_id_for_task);
-                }
+                let result = Abortable::new(
+                    run_openai_compatible_stream(window.clone(), stream_id_for_task.clone(), config, api_key, request),
+                    abort_registration,
+                ).await;
+                handle_stream_task_result(&window, &stream_id_for_task, result);
             });
-            Ok(ChatStartResult { stream_id })
         }
         ProviderKind::OpenAiResponses => {
-            insert_active_stream(&stream_id)?;
             tauri::async_runtime::spawn(async move {
-                if let Err(err) = run_openai_responses_stream(window.clone(), stream_id_for_task.clone(), config, api_key, request).await {
-                    let _ = emit_stream_event(&window, &stream_id_for_task, ChatStreamEvent::Error { code: "stream_error".into(), message: err.to_string() });
-                    let _ = remove_active_stream(&stream_id_for_task);
-                }
+                let result = Abortable::new(
+                    run_openai_responses_stream(window.clone(), stream_id_for_task.clone(), config, api_key, request),
+                    abort_registration,
+                ).await;
+                handle_stream_task_result(&window, &stream_id_for_task, result);
             });
-            Ok(ChatStartResult { stream_id })
         }
         ProviderKind::GoogleGemini => {
-            insert_active_stream(&stream_id)?;
             tauri::async_runtime::spawn(async move {
-                if let Err(err) = run_gemini_stream(window.clone(), stream_id_for_task.clone(), config, api_key, request).await {
-                    let _ = emit_stream_event(&window, &stream_id_for_task, ChatStreamEvent::Error { code: "stream_error".into(), message: err.to_string() });
-                    let _ = remove_active_stream(&stream_id_for_task);
-                }
+                let result = Abortable::new(
+                    run_gemini_stream(window.clone(), stream_id_for_task.clone(), config, api_key, request),
+                    abort_registration,
+                ).await;
+                handle_stream_task_result(&window, &stream_id_for_task, result);
             });
-            Ok(ChatStartResult { stream_id })
         }
         ProviderKind::AnthropicClaude => {
-            insert_active_stream(&stream_id)?;
             tauri::async_runtime::spawn(async move {
-                if let Err(err) = run_anthropic_stream(window.clone(), stream_id_for_task.clone(), config, api_key, request).await {
-                    let _ = emit_stream_event(&window, &stream_id_for_task, ChatStreamEvent::Error { code: "stream_error".into(), message: err.to_string() });
-                    let _ = remove_active_stream(&stream_id_for_task);
-                }
+                let result = Abortable::new(
+                    run_anthropic_stream(window.clone(), stream_id_for_task.clone(), config, api_key, request),
+                    abort_registration,
+                ).await;
+                handle_stream_task_result(&window, &stream_id_for_task, result);
             });
-            Ok(ChatStartResult { stream_id })
         }
     }
+
+    Ok(ChatStartResult { stream_id })
 }
 
 #[tauri::command]
-pub fn stop_chat_stream(stream_id: String) -> std::result::Result<bool, ErrorPayload> {
-    remove_active_stream(&stream_id).map_err(ErrorPayload::from)
+pub fn stop_chat_stream(window: tauri::Window, stream_id: String) -> std::result::Result<bool, ErrorPayload> {
+    let aborted = abort_active_stream(&stream_id).map_err(ErrorPayload::from)?;
+    if aborted {
+        emit_stream_event(&window, &stream_id, ChatStreamEvent::Done).map_err(ErrorPayload::from)?;
+    }
+    Ok(aborted)
 }
 
 fn adapter_for_kind(kind: &ProviderKind) -> Box<dyn ProviderAdapter> {
@@ -113,6 +117,17 @@ fn adapter_for_kind(kind: &ProviderKind) -> Box<dyn ProviderAdapter> {
         ProviderKind::GoogleGemini => Box::new(GeminiAdapter),
         ProviderKind::AnthropicClaude => Box::new(AnthropicAdapter),
     }
+}
+
+fn handle_stream_task_result(window: &tauri::Window, stream_id: &str, result: std::result::Result<crate::errors::Result<()>, futures_util::future::Aborted>) {
+    match result {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => {
+            let _ = emit_stream_event(window, stream_id, ChatStreamEvent::Error { code: "stream_error".into(), message: err.to_string() });
+        }
+        Err(_) => {}
+    }
+    let _ = remove_active_stream(stream_id);
 }
 
 async fn run_openai_compatible_stream(window: tauri::Window, stream_id: String, config: ProviderConfig, api_key: String, request: UnifiedChatRequest) -> crate::errors::Result<()> {
@@ -556,15 +571,15 @@ fn emit_stream_event(window: &tauri::Window, stream_id: &str, event: ChatStreamE
         .map_err(|err| KeySyncError::Provider(format!("failed to emit chat stream event: {err}")))
 }
 
-fn active_streams() -> &'static Mutex<HashSet<String>> {
-    ACTIVE_STREAMS.get_or_init(|| Mutex::new(HashSet::new()))
+fn active_streams() -> &'static Mutex<HashMap<String, AbortHandle>> {
+    ACTIVE_STREAMS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn insert_active_stream(stream_id: &str) -> std::result::Result<(), ErrorPayload> {
+fn insert_active_stream(stream_id: &str, abort_handle: AbortHandle) -> std::result::Result<(), ErrorPayload> {
     let mut streams = active_streams()
         .lock()
         .map_err(|_| ErrorPayload::from(KeySyncError::Provider("active stream registry is poisoned".into())))?;
-    streams.insert(stream_id.to_owned());
+    streams.insert(stream_id.to_owned(), abort_handle);
     Ok(())
 }
 
@@ -572,12 +587,23 @@ fn remove_active_stream(stream_id: &str) -> crate::errors::Result<bool> {
     let mut streams = active_streams()
         .lock()
         .map_err(|_| KeySyncError::Provider("active stream registry is poisoned".into()))?;
-    Ok(streams.remove(stream_id))
+    Ok(streams.remove(stream_id).is_some())
+}
+
+fn abort_active_stream(stream_id: &str) -> crate::errors::Result<bool> {
+    let mut streams = active_streams()
+        .lock()
+        .map_err(|_| KeySyncError::Provider("active stream registry is poisoned".into()))?;
+    let Some(abort_handle) = streams.remove(stream_id) else {
+        return Ok(false);
+    };
+    abort_handle.abort();
+    Ok(true)
 }
 
 fn is_stream_active(stream_id: &str) -> crate::errors::Result<bool> {
     let streams = active_streams()
         .lock()
         .map_err(|_| KeySyncError::Provider("active stream registry is poisoned".into()))?;
-    Ok(streams.contains(stream_id))
+    Ok(streams.contains_key(stream_id))
 }
