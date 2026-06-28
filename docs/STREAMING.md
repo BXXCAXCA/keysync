@@ -34,9 +34,11 @@ The UI appends each `delta.text` to the active assistant message and switches th
 
 ## Stop behavior
 
-`stop_chat_stream(streamId)` removes the stream ID from the active stream registry. The SSE read loop checks the registry before handling each chunk and emits `done` when it detects cancellation.
+`start_chat_stream_with_key` wraps each provider stream future in `Abortable` and stores the matching `AbortHandle` under the returned `streamId`.
 
-This is cooperative cancellation. It stops UI updates and exits the read loop, but it does not yet abort the underlying HTTP request at the transport level. A later improvement should store a cancellation handle per stream and abort the request immediately.
+`stop_chat_stream(streamId)` removes the handle from the active stream registry, calls `abort()`, and emits a final `done` event so the UI can immediately return to the idle state. Dropping the aborted stream future also drops the underlying request/response future, so the HTTP streaming read is cancelled instead of merely suppressing UI updates.
+
+The SSE read loop still checks the active registry between chunks. This keeps normal completion, external cleanup, and abort cleanup safe even if a provider finishes at nearly the same time as the user presses **Stop**.
 
 ## Current limitations
 
