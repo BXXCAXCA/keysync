@@ -26,7 +26,11 @@ button span, button small { display: block; text-align: left; } button small { m
 .message span { color: #38bdf8; font-size: 12px; text-transform: uppercase; }
 .message p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .message.user { margin-left: auto; background: rgba(37, 99, 235, .18); }
-.composer { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; padding-top: 14px; border-top: 1px solid rgba(148, 163, 184, .16); }
+.composer { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; padding-top: 14px; border-top: 1px solid rgba(148, 163, 184, .16); align-items: end; }
+.composer-input { display: grid; gap: 8px; min-width: 0; }
+.image-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.image-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; padding: 4px 8px; border: 1px solid rgba(125, 211, 252, .35); border-radius: 999px; background: rgba(14, 116, 144, .16); color: #cbd5e1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.image-chip button { border: 0; background: transparent; padding: 0; color: #fecaca; }
 input, select, textarea { width: 100%; border: 1px solid rgba(148, 163, 184, .22); background: rgba(15, 23, 42, .86); color: #e2e8f0; border-radius: 12px; padding: 11px 12px; }
 textarea { min-height: 80px; resize: vertical; }
 .card { border: 1px solid rgba(148, 163, 184, .16); border-radius: 18px; padding: 16px; background: rgba(15, 23, 42, .56); margin-bottom: 16px; }
