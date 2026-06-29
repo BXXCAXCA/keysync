@@ -56,6 +56,11 @@ function appendAssistantDelta(messages: ChatMessage[], delta: string): ChatMessa
   return [...next, { role: "assistant", content: delta }];
 }
 
+function createStreamId(): string {
+  const cryptoWithUuid = crypto as Crypto & { randomUUID?: () => string };
+  return cryptoWithUuid.randomUUID?.() ?? `stream-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 async function saveCredentialWithSystemKeychain(providerId: string, displayName: string, payload: StoredCredentialPayload): Promise<SecretRecordSummary> {
   return await invoke<SecretRecordSummary>("vault_save_secret_with_system_keychain", { providerId, displayName, payload });
 }
@@ -100,6 +105,7 @@ export default function App() {
     let unlisten: UnlistenFn | undefined;
     listen<ChatStreamPayload>("chat-stream-event", (event) => {
       const payload = event.payload;
+      if (payload.streamId !== activeStreamIdRef.current) return;
 
       if (payload.event.type === "start") {
         setBusy(true);
@@ -321,7 +327,10 @@ export default function App() {
     const secret = await unlockSelectedSecret();
     if (!secret) return;
 
+    const streamId = createStreamId();
     const userContent = chatInput.trim();
+    activeStreamIdRef.current = streamId;
+    setCurrentStreamId(streamId);
     setChatInput("");
     setChatMessages((messages) => [...messages, { role: "user", content: userContent }, { role: "assistant", content: "" }]);
     setBusy(true);
@@ -334,10 +343,16 @@ export default function App() {
         maxTokens: 512,
         messages: [...chatMessages.filter((message) => message.role !== "system"), { role: "user", content: userContent, images: [] }],
         systemPrompt: chatMessages.find((message) => message.role === "system")?.content,
-      });
-      activeStreamIdRef.current = result.streamId;
-      setCurrentStreamId(result.streamId);
+      }, streamId);
+
+      if (result.streamId !== streamId) {
+        activeStreamIdRef.current = result.streamId;
+        setCurrentStreamId(result.streamId);
+      }
     } catch (error) {
+      if (activeStreamIdRef.current === streamId) {
+        activeStreamIdRef.current = null;
+      }
       setBusy(false);
       setCurrentStreamId(null);
       setChatMessages((messages) => [...messages, { role: "assistant", content: `Failed to start stream: ${errorMessage(error)}` }]);
