@@ -14,8 +14,9 @@ use crate::providers::openai::OpenAiChatAdapter;
 use crate::providers::openai_compatible::OpenAiCompatibleAdapter;
 use crate::providers::openai_responses::OpenAiResponsesAdapter;
 use crate::providers::{
-    default_provider_templates, ChatStartResult, ChatStreamEvent, ChatStreamPayload, ModelInfo,
-    ProviderAdapter, ProviderConfig, ProviderKind, ProviderTemplate, TestResult, UnifiedChatRequest,
+    default_provider_templates, ChatStartResult, ChatStreamEvent, ChatStreamPayload, ImageAttachment,
+    ModelInfo, ProviderAdapter, ProviderConfig, ProviderKind, ProviderTemplate, TestResult,
+    UnifiedChatRequest,
 };
 
 const CHAT_STREAM_EVENT: &str = "chat-stream-event";
@@ -289,10 +290,26 @@ fn build_openai_messages(request: &UnifiedChatRequest) -> Vec<Value> {
     }
 
     for message in &request.messages {
-        if message.content.trim().is_empty() {
+        if message.content.trim().is_empty() && message.images.is_empty() {
             continue;
         }
-        messages.push(json!({ "role": &message.role, "content": &message.content }));
+
+        if message.images.is_empty() {
+            messages.push(json!({ "role": &message.role, "content": &message.content }));
+            continue;
+        }
+
+        let mut content = Vec::new();
+        if !message.content.trim().is_empty() {
+            content.push(json!({ "type": "text", "text": &message.content }));
+        }
+        for image in &message.images {
+            content.push(json!({
+                "type": "image_url",
+                "image_url": { "url": image_data_url(image) }
+            }));
+        }
+        messages.push(json!({ "role": &message.role, "content": content }));
     }
 
     messages
@@ -301,17 +318,31 @@ fn build_openai_messages(request: &UnifiedChatRequest) -> Vec<Value> {
 fn build_responses_input(request: &UnifiedChatRequest) -> Vec<Value> {
     let mut input = Vec::new();
     for message in &request.messages {
-        if message.content.trim().is_empty() || message.role == "system" {
+        if (message.content.trim().is_empty() && message.images.is_empty()) || message.role == "system" {
             continue;
         }
         let role = if message.role == "assistant" { "assistant" } else { "user" };
-        input.push(json!({
-            "role": role,
-            "content": [{
+        let mut content = Vec::new();
+
+        if !message.content.trim().is_empty() {
+            content.push(json!({
                 "type": if role == "assistant" { "output_text" } else { "input_text" },
                 "text": &message.content
-            }]
-        }));
+            }));
+        }
+
+        if role == "user" {
+            for image in &message.images {
+                content.push(json!({
+                    "type": "input_image",
+                    "image_url": image_data_url(image)
+                }));
+            }
+        }
+
+        if !content.is_empty() {
+            input.push(json!({ "role": role, "content": content }));
+        }
     }
 
     if input.is_empty() {
@@ -340,13 +371,26 @@ fn build_gemini_contents(request: &UnifiedChatRequest) -> Vec<Value> {
 
     for message in &request.messages {
         let role = if message.role == "assistant" { "model" } else { "user" };
-        if message.content.trim().is_empty() {
+        if message.content.trim().is_empty() && message.images.is_empty() {
             continue;
         }
-        contents.push(json!({
-            "role": role,
-            "parts": [{ "text": &message.content }]
-        }));
+        let mut parts = Vec::new();
+        if !message.content.trim().is_empty() {
+            parts.push(json!({ "text": &message.content }));
+        }
+        if role == "user" {
+            for image in &message.images {
+                parts.push(json!({
+                    "inlineData": {
+                        "mimeType": image_media_type(image),
+                        "data": &image.data_base64
+                    }
+                }));
+            }
+        }
+        if !parts.is_empty() {
+            contents.push(json!({ "role": role, "parts": parts }));
+        }
     }
 
     contents
@@ -355,14 +399,38 @@ fn build_gemini_contents(request: &UnifiedChatRequest) -> Vec<Value> {
 fn build_anthropic_messages(request: &UnifiedChatRequest) -> Vec<Value> {
     let mut messages = Vec::new();
     for message in &request.messages {
-        if message.content.trim().is_empty() || message.role == "system" {
+        if (message.content.trim().is_empty() && message.images.is_empty()) || message.role == "system" {
             continue;
         }
         let role = if message.role == "assistant" { "assistant" } else { "user" };
-        messages.push(json!({
-            "role": role,
-            "content": &message.content
-        }));
+
+        if message.images.is_empty() {
+            messages.push(json!({
+                "role": role,
+                "content": &message.content
+            }));
+            continue;
+        }
+
+        let mut content = Vec::new();
+        if !message.content.trim().is_empty() {
+            content.push(json!({ "type": "text", "text": &message.content }));
+        }
+        if role == "user" {
+            for image in &message.images {
+                content.push(json!({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": image_media_type(image),
+                        "data": &image.data_base64
+                    }
+                }));
+            }
+        }
+        if !content.is_empty() {
+            messages.push(json!({ "role": role, "content": content }));
+        }
     }
 
     if messages.is_empty() {
@@ -370,6 +438,18 @@ fn build_anthropic_messages(request: &UnifiedChatRequest) -> Vec<Value> {
     }
 
     messages
+}
+
+fn image_media_type(image: &ImageAttachment) -> &str {
+    if image.media_type.trim().is_empty() {
+        "application/octet-stream"
+    } else {
+        image.media_type.as_str()
+    }
+}
+
+fn image_data_url(image: &ImageAttachment) -> String {
+    format!("data:{};base64,{}", image_media_type(image), image.data_base64)
 }
 
 fn process_openai_sse_block(window: &tauri::Window, stream_id: &str, block: &str) -> crate::errors::Result<bool> {
