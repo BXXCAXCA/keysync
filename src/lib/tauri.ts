@@ -65,8 +65,8 @@ export async function testProviderWithKey(config: ProviderConfig, apiKey: string
   return await invoke<TestResult>("test_provider_with_key", { config, apiKey, model: model || null });
 }
 
-export async function startChatStreamWithKey(config: ProviderConfig, apiKey: string, request: UnifiedChatRequest): Promise<ChatStartResult> {
-  return await invoke<ChatStartResult>("start_chat_stream_with_key", { config, apiKey, request });
+export async function startChatStreamWithKey(config: ProviderConfig, apiKey: string, request: UnifiedChatRequest, streamId?: string): Promise<ChatStartResult> {
+  return await invoke<ChatStartResult>("start_chat_stream_with_key", { config, apiKey, request, streamId: streamId || null });
 }
 
 export async function stopChatStream(streamId: string): Promise<boolean> {
