@@ -24,6 +24,21 @@ interface ChatStreamPayload {
 
 The UI appends each `delta.text` to the active assistant message and switches the composer from **Send** to **Stop** while a stream is active. Events whose `streamId` does not match the active stream are ignored.
 
+## Image input
+
+The chat composer can attach one or more local image files. The frontend reads them as base64 and sends them through `UnifiedMessage.images` with `{ mediaType, dataBase64 }`.
+
+Provider request mapping:
+
+| Provider kind | Image mapping |
+| --- | --- |
+| `openai_chat` / `openai_compatible` / `custom` | Chat message `content` array with `image_url.url = data:<media>;base64,<data>` |
+| `openai_responses` | `input` content item `{ type: "input_image", image_url: "data:<media>;base64,<data>" }` |
+| `google_gemini` | `parts[].inlineData = { mimeType, data }` |
+| `anthropic_claude` | `content` block `{ type: "image", source: { type: "base64", media_type, data } }` |
+
+Pure text messages still use the provider's simple text shape where possible, so existing text-only calls remain compatible.
+
 ## Supported provider paths
 
 | Provider kind | Endpoint style | Parser |
@@ -45,6 +60,6 @@ The SSE read loop still checks the active registry between chunks. This keeps no
 ## Current limitations
 
 - Only text deltas are emitted.
-- Image attachments are represented in the unified request type but are not fully mapped for every provider yet.
+- Image attachments require a provider/model that actually supports vision input.
 - System prompt handling differs by provider because upstream APIs use different formats.
 - Usage accounting is best-effort because providers expose usage metadata in different chunks.
