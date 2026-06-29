@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { KeyRound, MessageSquareText, RefreshCw, Server, ShieldCheck, UploadCloud } from "lucide-react";
-import type { ChatStreamPayload, ModelInfo, ProviderTemplate, SecretRecordSummary, SystemKeychainStatus, TestResult, WebDavConfig, WebDavConfigSummary } from "./types";
+import type { ChatStreamPayload, ModelInfo, ProviderTemplate, SecretRecordSummary, SystemKeychainStatus, TestResult, UnifiedMessage, WebDavConfig, WebDavConfigSummary } from "./types";
 import {
   getAppStatus,
   listModelsWithKey,
@@ -62,6 +62,40 @@ function createStreamId(): string {
   return cryptoWithUuid.randomUUID?.() ?? `stream-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function parseFiniteNumber(value: string, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parsePositiveInt(value: string, fallback: number): number {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function estimateMessageBudget(message: UnifiedMessage): number {
+  return message.content.length + message.images.length * 1024 + 32;
+}
+
+function buildContextMessages(messages: ChatMessage[], nextMessage: UnifiedMessage, contextLength: number): UnifiedMessage[] {
+  const budget = Math.max(256, contextLength) * 4;
+  const history = messages
+    .filter((message) => message.role !== "system")
+    .map<UnifiedMessage>((message) => ({ role: message.role, content: message.content, images: [] }));
+  const combined = [...history, nextMessage];
+  const selected: UnifiedMessage[] = [];
+  let used = 0;
+
+  for (let index = combined.length - 1; index >= 0; index -= 1) {
+    const message = combined[index];
+    const estimated = estimateMessageBudget(message);
+    if (selected.length > 0 && used + estimated > budget) break;
+    selected.unshift(message);
+    used += estimated;
+  }
+
+  return selected;
+}
+
 function readImageFile(file: File): Promise<PendingImage> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -106,6 +140,9 @@ export default function App() {
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(initialMessages);
   const [currentStreamId, setCurrentStreamId] = useState<string | null>(null);
+  const [temperature, setTemperature] = useState("0.7");
+  const [maxTokens, setMaxTokens] = useState("512");
+  const [contextLength, setContextLength] = useState("8192");
   const [webdavConfig, setWebdavConfig] = useState<WebDavConfig>({ endpoint: "", username: "", password: "", remoteDir: "KeySyncAI" });
   const [savedWebdavSummary, setSavedWebdavSummary] = useState<WebDavConfigSummary | null>(null);
   const [syncMessage, setSyncMessage] = useState("");
@@ -361,8 +398,13 @@ export default function App() {
     if (!secret) return;
 
     const streamId = createStreamId();
+    const parsedTemperature = parseFiniteNumber(temperature, 0.7);
+    const parsedMaxTokens = parsePositiveInt(maxTokens, 512);
+    const parsedContextLength = parsePositiveInt(contextLength, 8192);
     const userContent = chatInput.trim();
     const userImages = pendingImages.map(({ mediaType, dataBase64 }) => ({ mediaType, dataBase64 }));
+    const nextMessage: UnifiedMessage = { role: "user", content: userContent, images: userImages };
+    const requestMessages = buildContextMessages(chatMessages, nextMessage, parsedContextLength);
     const displayContent = `${userContent || "[Image prompt]"}${userImages.length ? `${userContent ? "\n" : ""}[Attached ${userImages.length} image${userImages.length === 1 ? "" : "s"}]` : ""}`;
     activeStreamIdRef.current = streamId;
     setCurrentStreamId(streamId);
@@ -375,9 +417,9 @@ export default function App() {
       const result = await startChatStreamWithKey(templateToConfig(activeProvider), secret.apiKey, {
         model: selectedModel,
         stream: true,
-        temperature: 0.7,
-        maxTokens: 512,
-        messages: [...chatMessages.filter((message) => message.role !== "system"), { role: "user", content: userContent, images: userImages }],
+        temperature: parsedTemperature,
+        maxTokens: parsedMaxTokens,
+        messages: requestMessages,
         systemPrompt: chatMessages.find((message) => message.role === "system")?.content,
       }, streamId);
 
@@ -583,7 +625,7 @@ export default function App() {
         {conflictRecords.length > 0 && <section className="card"><h2>Conflict review</h2><p>Remote conflict copies were preserved during merge. Rename to keep them, or delete duplicate copies.</p><div className="model-list">{conflictRecords.map((record) => <span key={record.id}>{record.displayName}<small>{record.providerId} · {record.updatedAt}</small><input value={conflictRename[record.id] ?? record.displayName.replace(" [conflict remote]", "")} onChange={(event) => setConflictRename({ ...conflictRename, [record.id]: event.target.value })} /><div className="button-row"><button onClick={() => void handleAcceptConflict(record)} disabled={busy}>Keep renamed</button><button className="danger" onClick={() => void deleteRecord(record.id, "Deleted conflict copy.")} disabled={busy}>Delete conflict</button></div></span>)}</div></section>}
         <section className="card"><h2>Active provider</h2>{activeProvider ? <dl><dt>Name</dt><dd>{activeProvider.name}</dd><dt>Base URL</dt><dd>{activeProvider.baseUrl}</dd><dt>Streaming</dt><dd>{activeProvider.supportsStreaming ? "Supported" : "Not supported"}</dd><dt>Images</dt><dd>{activeProvider.supportsImages ? "Supported" : "Not supported"}</dd></dl> : <p>No provider loaded.</p>}</section>
         <section className="card"><h2>Models</h2>{models.length ? <><label>Selected model<select value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)}>{models.map((model) => <option key={model.id} value={model.id}>{model.displayName}</option>)}</select></label><div className="model-list">{models.slice(0, 8).map((model) => <span key={model.id}>{model.displayName}<small>{model.capabilities.join(", ")}</small></span>)}</div></> : <p>No models loaded yet.</p>}</section>
-        <section className="card"><h2>Model params</h2><label>System prompt<textarea value={chatMessages.find((message) => message.role === "system")?.content ?? ""} onChange={(event) => setChatMessages((messages) => [{ role: "system", content: event.target.value }, ...messages.filter((message) => message.role !== "system")])} placeholder="You are a helpful assistant." /></label><label>Temperature<input type="number" defaultValue="0.7" step="0.1" /></label><label>Context length<input type="number" defaultValue="8192" /></label></section>
+        <section className="card"><h2>Model params</h2><label>System prompt<textarea value={chatMessages.find((message) => message.role === "system")?.content ?? ""} onChange={(event) => setChatMessages((messages) => [{ role: "system", content: event.target.value }, ...messages.filter((message) => message.role !== "system")])} placeholder="You are a helpful assistant." /></label><label>Temperature<input type="number" value={temperature} min="0" max="2" step="0.1" onChange={(event) => setTemperature(event.target.value)} /></label><label>Max output tokens<input type="number" value={maxTokens} min="1" step="1" onChange={(event) => setMaxTokens(event.target.value)} /></label><label>Context length<input type="number" value={contextLength} min="256" step="256" onChange={(event) => setContextLength(event.target.value)} /></label><p>Context length trims recent history before sending. Images are attached only on the current turn.</p></section>
       </aside>
     </main>
   );
