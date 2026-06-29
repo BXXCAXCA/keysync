@@ -52,8 +52,10 @@ pub async fn test_provider_with_key(config: ProviderConfig, api_key: String, mod
 }
 
 #[tauri::command]
-pub async fn start_chat_stream_with_key(window: tauri::Window, config: ProviderConfig, api_key: String, request: UnifiedChatRequest) -> std::result::Result<ChatStartResult, ErrorPayload> {
-    let stream_id = Uuid::new_v4().to_string();
+pub async fn start_chat_stream_with_key(window: tauri::Window, config: ProviderConfig, api_key: String, request: UnifiedChatRequest, stream_id: Option<String>) -> std::result::Result<ChatStartResult, ErrorPayload> {
+    let stream_id = stream_id
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
     let stream_id_for_task = stream_id.clone();
     let (abort_handle, abort_registration) = AbortHandle::new_pair();
     insert_active_stream(&stream_id, abort_handle)?;
