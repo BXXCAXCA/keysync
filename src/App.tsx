@@ -32,6 +32,7 @@ import {
 } from "./lib/tauri";
 
 type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+type PendingImage = { name: string; mediaType: string; dataBase64: string };
 type StoredCredentialPayload = { apiKey: string; customHeaders: Array<[string, string]> };
 
 const initialMessages: ChatMessage[] = [
@@ -61,6 +62,23 @@ function createStreamId(): string {
   return cryptoWithUuid.randomUUID?.() ?? `stream-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function readImageFile(file: File): Promise<PendingImage> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result ?? "");
+      const [, dataBase64 = ""] = dataUrl.split(",");
+      resolve({
+        name: file.name,
+        mediaType: file.type || "application/octet-stream",
+        dataBase64,
+      });
+    };
+    reader.onerror = () => reject(reader.error ?? new Error(`Failed to read ${file.name}`));
+    reader.readAsDataURL(file);
+  });
+}
+
 async function saveCredentialWithSystemKeychain(providerId: string, displayName: string, payload: StoredCredentialPayload): Promise<SecretRecordSummary> {
   return await invoke<SecretRecordSummary>("vault_save_secret_with_system_keychain", { providerId, displayName, payload });
 }
@@ -85,6 +103,7 @@ export default function App() {
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [chatInput, setChatInput] = useState("");
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(initialMessages);
   const [currentStreamId, setCurrentStreamId] = useState<string | null>(null);
   const [webdavConfig, setWebdavConfig] = useState<WebDavConfig>({ endpoint: "", username: "", password: "", remoteDir: "KeySyncAI" });
@@ -92,6 +111,7 @@ export default function App() {
   const [syncMessage, setSyncMessage] = useState("");
   const [keychainStatus, setKeychainStatus] = useState<SystemKeychainStatus | null>(null);
   const activeStreamIdRef = useRef<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     loadProviderTemplates().then(setTemplates);
@@ -322,17 +342,33 @@ export default function App() {
     if (secret) await testProviderUsingKey(secret.apiKey);
   }
 
+  async function handleImageFiles(files: FileList | null) {
+    const images = Array.from(files ?? []).filter((file) => file.type.startsWith("image/"));
+    if (!images.length) return;
+    try {
+      const attachments = await Promise.all(images.map(readImageFile));
+      setPendingImages((current) => [...current, ...attachments]);
+    } catch (error) {
+      setTestResult(activeProvider ? { ok: false, providerId: activeProvider.id, message: errorMessage(error) } : null);
+    } finally {
+      if (imageInputRef.current) imageInputRef.current.value = "";
+    }
+  }
+
   async function handleSendChat() {
-    if (!activeProvider || !selectedModel || !chatInput.trim() || currentStreamId) return;
+    if (!activeProvider || !selectedModel || (!chatInput.trim() && pendingImages.length === 0) || currentStreamId) return;
     const secret = await unlockSelectedSecret();
     if (!secret) return;
 
     const streamId = createStreamId();
     const userContent = chatInput.trim();
+    const userImages = pendingImages.map(({ mediaType, dataBase64 }) => ({ mediaType, dataBase64 }));
+    const displayContent = `${userContent || "[Image prompt]"}${userImages.length ? `${userContent ? "\n" : ""}[Attached ${userImages.length} image${userImages.length === 1 ? "" : "s"}]` : ""}`;
     activeStreamIdRef.current = streamId;
     setCurrentStreamId(streamId);
     setChatInput("");
-    setChatMessages((messages) => [...messages, { role: "user", content: userContent }, { role: "assistant", content: "" }]);
+    setPendingImages([]);
+    setChatMessages((messages) => [...messages, { role: "user", content: displayContent }, { role: "assistant", content: "" }]);
     setBusy(true);
 
     try {
@@ -341,7 +377,7 @@ export default function App() {
         stream: true,
         temperature: 0.7,
         maxTokens: 512,
-        messages: [...chatMessages.filter((message) => message.role !== "system"), { role: "user", content: userContent, images: [] }],
+        messages: [...chatMessages.filter((message) => message.role !== "system"), { role: "user", content: userContent, images: userImages }],
         systemPrompt: chatMessages.find((message) => message.role === "system")?.content,
       }, streamId);
 
@@ -528,7 +564,15 @@ export default function App() {
         <div className="messages">
           {chatMessages.map((message, index) => <article key={index} className={`message ${message.role}`}><span>{message.role}</span><p>{message.content || (message.role === "assistant" ? "Streaming..." : "")}</p></article>)}
         </div>
-        <footer className="composer"><button><UploadCloud size={18} /> Image</button><input value={chatInput} onChange={(event) => setChatInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) void handleSendChat(); }} placeholder="Send a test message to the selected model..." />{currentStreamId ? <button className="danger inline" onClick={handleStopChat}>Stop</button> : <button className="primary" disabled={busy || !selectedSecretId || !selectedModel || !chatInput.trim()} onClick={handleSendChat}>Send</button>}</footer>
+        <footer className="composer">
+          <button onClick={() => imageInputRef.current?.click()} disabled={busy}><UploadCloud size={18} /> Image</button>
+          <input ref={imageInputRef} type="file" accept="image/*" multiple hidden onChange={(event) => void handleImageFiles(event.target.files)} />
+          <div className="composer-input">
+            {pendingImages.length > 0 && <div className="image-chips">{pendingImages.map((image, index) => <span key={`${image.name}-${index}`} className="image-chip">{image.name}<button onClick={() => setPendingImages((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button></span>)}</div>}
+            <input value={chatInput} onChange={(event) => setChatInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) void handleSendChat(); }} placeholder="Send a test message to the selected model..." />
+          </div>
+          {currentStreamId ? <button className="danger inline" onClick={handleStopChat}>Stop</button> : <button className="primary" disabled={busy || !selectedSecretId || !selectedModel || (!chatInput.trim() && pendingImages.length === 0)} onClick={handleSendChat}>Send</button>}
+        </footer>
       </section>
 
       <aside className="inspector">
