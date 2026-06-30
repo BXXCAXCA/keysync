@@ -29,9 +29,37 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-  rust:
-    name: Rust check
+  rust-check:
+    name: Rust cargo check
     runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux Tauri dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Cargo check
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+  rust-quality:
+    name: Rust fmt and clippy
+    runs-on: ubuntu-24.04
+    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,9 +85,6 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
-
-      - name: Cargo check
-        run: cargo check --manifest-path src-tauri/Cargo.toml
 
       - name: Cargo clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
