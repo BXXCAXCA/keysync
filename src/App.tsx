@@ -2,11 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { KeyRound, MessageSquareText, RefreshCw, Server, ShieldCheck, UploadCloud } from "lucide-react";
-import type { ChatStreamPayload, ModelInfo, ProviderTemplate, SecretRecordSummary, SystemKeychainStatus, TestResult, UnifiedMessage, WebDavConfig, WebDavConfigSummary } from "./types";
+import type { ChatStreamPayload, ConversationSummary, ModelInfo, ProviderTemplate, SecretRecordSummary, SystemKeychainStatus, TestResult, UnifiedMessage, WebDavConfig, WebDavConfigSummary } from "./types";
 import {
+  deleteConversation,
   getAppStatus,
+  listConversations,
   listModelsWithKey,
+  loadConversation,
   loadProviderTemplates,
+  saveConversation,
   startChatStreamWithKey,
   stopChatStream,
   templateToConfig,
@@ -96,6 +100,11 @@ function buildContextMessages(messages: ChatMessage[], nextMessage: UnifiedMessa
   return selected;
 }
 
+function titleFromMessages(messages: ChatMessage[]): string {
+  const firstUser = messages.find((message) => message.role === "user" && message.content.trim());
+  return (firstUser?.content ?? "New conversation").replace(/\s+/g, " ").slice(0, 64);
+}
+
 function readImageFile(file: File): Promise<PendingImage> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -139,6 +148,8 @@ export default function App() {
   const [chatInput, setChatInput] = useState("");
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(initialMessages);
+  const [conversationSummaries, setConversationSummaries] = useState<ConversationSummary[]>([]);
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [currentStreamId, setCurrentStreamId] = useState<string | null>(null);
   const [temperature, setTemperature] = useState("0.7");
   const [maxTokens, setMaxTokens] = useState("512");
@@ -149,11 +160,34 @@ export default function App() {
   const [keychainStatus, setKeychainStatus] = useState<SystemKeychainStatus | null>(null);
   const activeStreamIdRef = useRef<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const chatMessagesRef = useRef<ChatMessage[]>(initialMessages);
+  const currentConversationIdRef = useRef<string | null>(null);
+  const activeProviderIdRef = useRef(activeProviderId);
+  const selectedModelRef = useRef(selectedModel);
+  const temperatureRef = useRef(temperature);
+  const maxTokensRef = useRef(maxTokens);
+  const contextLengthRef = useRef(contextLength);
+
+  function updateChatMessages(updater: (messages: ChatMessage[]) => ChatMessage[]) {
+    const next = updater(chatMessagesRef.current);
+    chatMessagesRef.current = next;
+    setChatMessages(next);
+  }
+
+  useEffect(() => {
+    activeProviderIdRef.current = activeProviderId;
+    selectedModelRef.current = selectedModel;
+    temperatureRef.current = temperature;
+    maxTokensRef.current = maxTokens;
+    contextLengthRef.current = contextLength;
+    currentConversationIdRef.current = currentConversationId;
+  });
 
   useEffect(() => {
     loadProviderTemplates().then(setTemplates);
     getAppStatus().then(setStatus);
     reloadVaultRecords();
+    reloadConversations();
     reloadSavedWebDavSummary();
     reloadSystemKeychainStatus();
   }, []);
@@ -170,24 +204,25 @@ export default function App() {
       }
 
       if (payload.event.type === "delta") {
-        setChatMessages((messages) => appendAssistantDelta(messages, payload.event.text));
+        updateChatMessages((messages) => appendAssistantDelta(messages, payload.event.text));
         return;
       }
 
       if (payload.event.type === "usage") {
         setTestResult((current) => ({
           ok: true,
-          providerId: current?.providerId ?? activeProviderId,
+          providerId: current?.providerId ?? activeProviderIdRef.current,
           message: `Usage: input ${payload.event.inputTokens ?? "?"}, output ${payload.event.outputTokens ?? "?"}`,
         }));
         return;
       }
 
       if (payload.event.type === "error") {
-        setChatMessages((messages) => [...messages, { role: "assistant", content: `Stream error: ${payload.event.message}` }]);
+        updateChatMessages((messages) => [...messages, { role: "assistant", content: `Stream error: ${payload.event.message}` }]);
         setBusy(false);
         activeStreamIdRef.current = null;
         setCurrentStreamId(null);
+        void persistCurrentConversation(chatMessagesRef.current);
         return;
       }
 
@@ -195,6 +230,7 @@ export default function App() {
         setBusy(false);
         activeStreamIdRef.current = null;
         setCurrentStreamId(null);
+        void persistCurrentConversation(chatMessagesRef.current);
       }
     }).then((dispose) => {
       unlisten = dispose;
@@ -203,7 +239,7 @@ export default function App() {
     return () => {
       unlisten?.();
     };
-  }, [activeProviderId]);
+  }, []);
 
   const activeProvider = useMemo(
     () => templates.find((provider) => provider.id === activeProviderId) ?? templates[0],
@@ -218,9 +254,99 @@ export default function App() {
   useEffect(() => {
     setModels([]);
     setTestResult(null);
-    setSelectedModel("");
+    if (!currentConversationIdRef.current) {
+      setSelectedModel("");
+    }
     setSelectedSecretId("");
   }, [activeProviderId]);
+
+  async function reloadConversations() {
+    try {
+      setConversationSummaries(await listConversations());
+    } catch {
+      setConversationSummaries([]);
+    }
+  }
+
+  async function persistCurrentConversation(messages: ChatMessage[] = chatMessagesRef.current) {
+    if (!selectedModelRef.current) return;
+    const persistedMessages = messages
+      .filter((message) => message.role !== "system")
+      .filter((message) => !(message.role === "assistant" && message.content === initialMessages[1].content))
+      .filter((message) => message.content.trim());
+    if (!persistedMessages.some((message) => message.role === "user")) return;
+
+    const systemPrompt = messages.find((message) => message.role === "system")?.content;
+    try {
+      const detail = await saveConversation({
+        id: currentConversationIdRef.current ?? undefined,
+        title: titleFromMessages(persistedMessages),
+        providerId: activeProviderIdRef.current,
+        modelId: selectedModelRef.current,
+        systemPrompt,
+        params: {
+          temperature: parseFiniteNumber(temperatureRef.current, 0.7),
+          maxTokens: parsePositiveInt(maxTokensRef.current, 512),
+          contextLength: parsePositiveInt(contextLengthRef.current, 8192),
+        },
+        messages: persistedMessages.map((message) => ({
+          role: message.role,
+          content: message.content,
+          attachments: [],
+        })),
+      });
+      currentConversationIdRef.current = detail.summary.id;
+      setCurrentConversationId(detail.summary.id);
+      await reloadConversations();
+    } catch (error) {
+      setTestResult({ ok: false, providerId: activeProviderIdRef.current, message: `Conversation save failed: ${errorMessage(error)}` });
+    }
+  }
+
+  function handleNewConversation() {
+    activeStreamIdRef.current = null;
+    currentConversationIdRef.current = null;
+    setCurrentConversationId(null);
+    updateChatMessages(() => initialMessages);
+    setChatInput("");
+    setPendingImages([]);
+    setTestResult(null);
+  }
+
+  async function handleLoadConversation(conversationId: string) {
+    try {
+      const detail = await loadConversation(conversationId);
+      currentConversationIdRef.current = detail.summary.id;
+      setCurrentConversationId(detail.summary.id);
+      setActiveProviderId(detail.summary.providerId);
+      setTimeout(() => setSelectedModel(detail.summary.modelId), 0);
+      const params = detail.summary.params;
+      setTemperature(String(typeof params.temperature === "number" ? params.temperature : 0.7));
+      setMaxTokens(String(typeof params.maxTokens === "number" ? params.maxTokens : 512));
+      setContextLength(String(typeof params.contextLength === "number" ? params.contextLength : 8192));
+      const loadedMessages: ChatMessage[] = [
+        { role: "system", content: detail.summary.systemPrompt ?? initialMessages[0].content },
+        ...detail.messages.map((message) => ({ role: message.role as ChatMessage["role"], content: message.content })),
+      ];
+      updateChatMessages(() => loadedMessages.length > 1 ? loadedMessages : initialMessages);
+      setChatInput("");
+      setPendingImages([]);
+    } catch (error) {
+      setTestResult({ ok: false, providerId: activeProviderIdRef.current, message: errorMessage(error) });
+    }
+  }
+
+  async function handleDeleteConversation(conversationId: string) {
+    try {
+      await deleteConversation(conversationId);
+      if (currentConversationIdRef.current === conversationId) {
+        handleNewConversation();
+      }
+      await reloadConversations();
+    } catch (error) {
+      setTestResult({ ok: false, providerId: activeProviderIdRef.current, message: errorMessage(error) });
+    }
+  }
 
   async function reloadVaultRecords() {
     try {
@@ -404,13 +530,14 @@ export default function App() {
     const userContent = chatInput.trim();
     const userImages = pendingImages.map(({ mediaType, dataBase64 }) => ({ mediaType, dataBase64 }));
     const nextMessage: UnifiedMessage = { role: "user", content: userContent, images: userImages };
-    const requestMessages = buildContextMessages(chatMessages, nextMessage, parsedContextLength);
+    const requestMessages = buildContextMessages(chatMessagesRef.current, nextMessage, parsedContextLength);
     const displayContent = `${userContent || "[Image prompt]"}${userImages.length ? `${userContent ? "\n" : ""}[Attached ${userImages.length} image${userImages.length === 1 ? "" : "s"}]` : ""}`;
     activeStreamIdRef.current = streamId;
+    selectedModelRef.current = selectedModel;
     setCurrentStreamId(streamId);
     setChatInput("");
     setPendingImages([]);
-    setChatMessages((messages) => [...messages, { role: "user", content: displayContent }, { role: "assistant", content: "" }]);
+    updateChatMessages((messages) => [...messages, { role: "user", content: displayContent }, { role: "assistant", content: "" }]);
     setBusy(true);
 
     try {
@@ -420,7 +547,7 @@ export default function App() {
         temperature: parsedTemperature,
         maxTokens: parsedMaxTokens,
         messages: requestMessages,
-        systemPrompt: chatMessages.find((message) => message.role === "system")?.content,
+        systemPrompt: chatMessagesRef.current.find((message) => message.role === "system")?.content,
       }, streamId);
 
       if (result.streamId !== streamId) {
@@ -433,7 +560,8 @@ export default function App() {
       }
       setBusy(false);
       setCurrentStreamId(null);
-      setChatMessages((messages) => [...messages, { role: "assistant", content: `Failed to start stream: ${errorMessage(error)}` }]);
+      updateChatMessages((messages) => [...messages, { role: "assistant", content: `Failed to start stream: ${errorMessage(error)}` }]);
+      void persistCurrentConversation(chatMessagesRef.current);
     }
   }
 
@@ -443,7 +571,8 @@ export default function App() {
     activeStreamIdRef.current = null;
     setCurrentStreamId(null);
     setBusy(false);
-    setChatMessages((messages) => appendAssistantDelta(messages, "\n\n[Stopped]"));
+    updateChatMessages((messages) => appendAssistantDelta(messages, "\n\n[Stopped]"));
+    void persistCurrentConversation(chatMessagesRef.current);
     try {
       await stopChatStream(streamId);
     } catch (error) {
@@ -597,12 +726,17 @@ export default function App() {
           ))}
         </div></section>
         <section><h2><MessageSquareText size={16} /> Conversations</h2><div className="conversation-list">
-          <button className="active">Current stream test</button><button>Provider test scratchpad</button><button>Vision model check</button>
-        </div></section>
+          <button onClick={handleNewConversation} className={!currentConversationId ? "active" : ""}>New chat<small>Unsaved scratchpad</small></button>
+          {conversationSummaries.map((conversation) => (
+            <button key={conversation.id} className={conversation.id === currentConversationId ? "active" : ""} onClick={() => void handleLoadConversation(conversation.id)}>
+              <span>{conversation.title}</span><small>{conversation.modelId} · {conversation.messageCount} messages</small>
+            </button>
+          ))}
+        </div>{currentConversationId && <button className="danger" onClick={() => void handleDeleteConversation(currentConversationId)}>Delete conversation</button>}</section>
       </aside>
 
       <section className="chat-panel">
-        <header><div><h1>Lightweight chat client</h1><p>Streaming chat is wired for OpenAI-compatible, Responses, Gemini, and Anthropic providers.</p></div><button className="secondary" onClick={handleListModelsWithSavedKey} disabled={busy || !selectedSecretId}><RefreshCw size={16} /> Refresh models</button></header>
+        <header><div><h1>Lightweight chat client</h1><p>Streaming chat is wired for OpenAI-compatible, Responses, Gemini, and Anthropic providers. Conversations auto-save locally after each stream.</p></div><button className="secondary" onClick={handleListModelsWithSavedKey} disabled={busy || !selectedSecretId}><RefreshCw size={16} /> Refresh models</button></header>
         <div className="messages">
           {chatMessages.map((message, index) => <article key={index} className={`message ${message.role}`}><span>{message.role}</span><p>{message.content || (message.role === "assistant" ? "Streaming..." : "")}</p></article>)}
         </div>
@@ -625,7 +759,7 @@ export default function App() {
         {conflictRecords.length > 0 && <section className="card"><h2>Conflict review</h2><p>Remote conflict copies were preserved during merge. Rename to keep them, or delete duplicate copies.</p><div className="model-list">{conflictRecords.map((record) => <span key={record.id}>{record.displayName}<small>{record.providerId} · {record.updatedAt}</small><input value={conflictRename[record.id] ?? record.displayName.replace(" [conflict remote]", "")} onChange={(event) => setConflictRename({ ...conflictRename, [record.id]: event.target.value })} /><div className="button-row"><button onClick={() => void handleAcceptConflict(record)} disabled={busy}>Keep renamed</button><button className="danger" onClick={() => void deleteRecord(record.id, "Deleted conflict copy.")} disabled={busy}>Delete conflict</button></div></span>)}</div></section>}
         <section className="card"><h2>Active provider</h2>{activeProvider ? <dl><dt>Name</dt><dd>{activeProvider.name}</dd><dt>Base URL</dt><dd>{activeProvider.baseUrl}</dd><dt>Streaming</dt><dd>{activeProvider.supportsStreaming ? "Supported" : "Not supported"}</dd><dt>Images</dt><dd>{activeProvider.supportsImages ? "Supported" : "Not supported"}</dd></dl> : <p>No provider loaded.</p>}</section>
         <section className="card"><h2>Models</h2>{models.length ? <><label>Selected model<select value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)}>{models.map((model) => <option key={model.id} value={model.id}>{model.displayName}</option>)}</select></label><div className="model-list">{models.slice(0, 8).map((model) => <span key={model.id}>{model.displayName}<small>{model.capabilities.join(", ")}</small></span>)}</div></> : <p>No models loaded yet.</p>}</section>
-        <section className="card"><h2>Model params</h2><label>System prompt<textarea value={chatMessages.find((message) => message.role === "system")?.content ?? ""} onChange={(event) => setChatMessages((messages) => [{ role: "system", content: event.target.value }, ...messages.filter((message) => message.role !== "system")])} placeholder="You are a helpful assistant." /></label><label>Temperature<input type="number" value={temperature} min="0" max="2" step="0.1" onChange={(event) => setTemperature(event.target.value)} /></label><label>Max output tokens<input type="number" value={maxTokens} min="1" step="1" onChange={(event) => setMaxTokens(event.target.value)} /></label><label>Context length<input type="number" value={contextLength} min="256" step="256" onChange={(event) => setContextLength(event.target.value)} /></label><p>Context length trims recent history before sending. Images are attached only on the current turn.</p></section>
+        <section className="card"><h2>Model params</h2><label>System prompt<textarea value={chatMessages.find((message) => message.role === "system")?.content ?? ""} onChange={(event) => updateChatMessages((messages) => [{ role: "system", content: event.target.value }, ...messages.filter((message) => message.role !== "system")])} placeholder="You are a helpful assistant." /></label><label>Temperature<input type="number" value={temperature} min="0" max="2" step="0.1" onChange={(event) => setTemperature(event.target.value)} /></label><label>Max output tokens<input type="number" value={maxTokens} min="1" step="1" onChange={(event) => setMaxTokens(event.target.value)} /></label><label>Context length<input type="number" value={contextLength} min="256" step="256" onChange={(event) => setContextLength(event.target.value)} /></label><p>Context length trims recent history before sending. Images are attached only on the current turn.</p></section>
       </aside>
     </main>
   );
