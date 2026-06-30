@@ -136,21 +136,21 @@ pub fn save_conversation(app: tauri::AppHandle, input: SaveConversationInput) ->
                 params_json = excluded.params_json, \
                 updated_at = excluded.updated_at",
             params![
-                conversation_id,
-                title,
+                &conversation_id,
+                &title,
                 input.provider_id.trim(),
                 input.model_id.trim(),
                 input.system_prompt.as_deref(),
-                params_json,
-                now,
-                now,
+                &params_json,
+                &now,
+                &now,
             ],
         )
         .map_err(storage_error)?;
 
     service
         .connection()
-        .execute("DELETE FROM messages WHERE conversation_id = ?1", params![conversation_id])
+        .execute("DELETE FROM messages WHERE conversation_id = ?1", params![&conversation_id])
         .map_err(storage_error)?;
 
     for message in input.messages {
@@ -163,6 +163,7 @@ pub fn save_conversation(app: tauri::AppHandle, input: SaveConversationInput) ->
                 .to_string(),
             None => Uuid::new_v4().to_string(),
         };
+        let role = message.role.trim().to_owned();
         let attachments_json = serde_json::to_string(&message.attachments)
             .map_err(|err| ErrorPayload::from(KeySyncError::Storage(format!("serialize message attachments: {err}"))))?;
         service
@@ -170,7 +171,7 @@ pub fn save_conversation(app: tauri::AppHandle, input: SaveConversationInput) ->
             .execute(
                 "INSERT INTO messages (id, conversation_id, role, content, attachments_json, token_usage_json, created_at) \
                  VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6)",
-                params![message_id, conversation_id, message.role.trim(), message.content, attachments_json, now],
+                params![&message_id, &conversation_id, &role, &message.content, &attachments_json, &now],
             )
             .map_err(storage_error)?;
     }
@@ -184,11 +185,11 @@ pub fn delete_conversation(app: tauri::AppHandle, conversation_id: String) -> st
     parse_uuid(&conversation_id, "conversation")?;
     service
         .connection()
-        .execute("DELETE FROM messages WHERE conversation_id = ?1", params![conversation_id])
+        .execute("DELETE FROM messages WHERE conversation_id = ?1", params![&conversation_id])
         .map_err(storage_error)?;
     let deleted = service
         .connection()
-        .execute("DELETE FROM conversations WHERE id = ?1", params![conversation_id])
+        .execute("DELETE FROM conversations WHERE id = ?1", params![&conversation_id])
         .map_err(storage_error)?;
     Ok(deleted > 0)
 }
