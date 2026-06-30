@@ -50,10 +50,15 @@ export interface TestResult {
   message: string;
 }
 
+export interface ImageAttachment {
+  mediaType: string;
+  dataBase64: string;
+}
+
 export interface UnifiedMessage {
   role: "system" | "user" | "assistant" | string;
   content: string;
-  images: Array<{ mediaType: string; dataBase64: string }>;
+  images: ImageAttachment[];
 }
 
 export interface UnifiedChatRequest {
@@ -79,6 +84,47 @@ export interface ChatStreamPayload {
 
 export interface ChatStartResult {
   streamId: string;
+}
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  providerId: string;
+  modelId: string;
+  systemPrompt?: string;
+  params: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+}
+
+export interface StoredMessage {
+  id: string;
+  conversationId: string;
+  role: "system" | "user" | "assistant" | string;
+  content: string;
+  attachments: ImageAttachment[];
+  createdAt: string;
+}
+
+export interface ConversationDetail {
+  summary: ConversationSummary;
+  messages: StoredMessage[];
+}
+
+export interface SaveConversationInput {
+  id?: string;
+  title: string;
+  providerId: string;
+  modelId: string;
+  systemPrompt?: string;
+  params: Record<string, unknown>;
+  messages: Array<{
+    id?: string;
+    role: string;
+    content: string;
+    attachments: ImageAttachment[];
+  }>;
 }
 
 export interface SecretPayload {
