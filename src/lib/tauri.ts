@@ -1,9 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ChatStartResult,
+  ConversationDetail,
+  ConversationSummary,
   ModelInfo,
   ProviderConfig,
   ProviderTemplate,
+  SaveConversationInput,
   SecretPayload,
   SecretRecordSummary,
   SystemKeychainStatus,
@@ -71,6 +74,22 @@ export async function startChatStreamWithKey(config: ProviderConfig, apiKey: str
 
 export async function stopChatStream(streamId: string): Promise<boolean> {
   return await invoke<boolean>("stop_chat_stream", { streamId });
+}
+
+export async function listConversations(): Promise<ConversationSummary[]> {
+  return await invoke<ConversationSummary[]>("list_conversations");
+}
+
+export async function loadConversation(conversationId: string): Promise<ConversationDetail> {
+  return await invoke<ConversationDetail>("load_conversation", { conversationId });
+}
+
+export async function saveConversation(input: SaveConversationInput): Promise<ConversationDetail> {
+  return await invoke<ConversationDetail>("save_conversation", { input });
+}
+
+export async function deleteConversation(conversationId: string): Promise<boolean> {
+  return await invoke<boolean>("delete_conversation", { conversationId });
 }
 
 export async function getVaultSecurityProfile(): Promise<VaultSecurityProfile> {
