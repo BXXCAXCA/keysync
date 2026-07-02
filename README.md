@@ -1,5 +1,7 @@
 # KeySync AI
 
+[![CI](https://github.com/BXXCAXCA/keysync/actions/workflows/ci.yml/badge.svg)](https://github.com/BXXCAXCA/keysync/actions/workflows/ci.yml)
+
 KeySync AI is a local-first cross-platform desktop client for managing LLM provider credentials, testing providers, syncing encrypted configuration through WebDAV, and running lightweight model chats.
 
 ## Goals
@@ -7,22 +9,38 @@ KeySync AI is a local-first cross-platform desktop client for managing LLM provi
 - Encrypted credential storage with a system-keychain-first design and optional master password mode.
 - Provider adapters for OpenAI, OpenAI Responses, Google Gemini, Anthropic Claude, and OpenAI-compatible custom endpoints.
 - Model list fetching, provider validation, and minimal model request testing.
-- Lightweight multi-turn chat with streaming output, stop generation, and image-input support planned for the MVP.
+- Lightweight multi-turn chat with streaming output, stop generation, image-input support, model parameter wiring, and local conversation persistence.
 - WebDAV sync for encrypted credentials and configuration; chat history remains local by default.
 
 ## Development
 
 ```bash
-pnpm install
-pnpm tauri dev
+npm install
+npm run build
+npm run tauri dev
+```
+
+Rust-only checks:
+
+```bash
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo check --manifest-path src-tauri/Cargo.toml
+cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 ```
 
 Required toolchain:
 
 - Node.js 20+
-- pnpm 9+
 - Rust stable
 - Tauri v2 prerequisites for your OS
+
+## Continuous integration
+
+GitHub Actions runs on pull requests and pushes to `main`.
+
+- `Frontend build`: installs Node dependencies and runs `npm run build`.
+- `Rust cargo check`: installs Linux Tauri dependencies and runs `cargo check`.
+- `Rust fmt and clippy`: runs `cargo fmt --check` and `cargo clippy -D warnings`. This job is currently non-blocking so formatting/lint debt can be surfaced without blocking early MVP iteration.
 
 ## Current implementation
 
@@ -36,6 +54,9 @@ Required toolchain:
 - Anthropic Claude built-in model list, minimal Messages API provider test, and streaming chat.
 - OpenAI-compatible streaming chat through Tauri events.
 - Stop generation for active chat streams.
+- Image input mapping for OpenAI Chat/Responses, Gemini, and Anthropic request formats.
+- Model parameters wired into chat requests with lightweight frontend context trimming.
+- Local SQLite conversation persistence with sidebar conversation list.
 - Real vault encryption envelope using XChaCha20-Poly1305 and Argon2id where needed.
 - System keychain backend for local data-key initialization, default record encryption, and status checks.
 - Optional master-password record save/unlock for compatibility.
@@ -52,6 +73,8 @@ See:
 - `docs/PROVIDERS.md`
 - `docs/VAULT.md`
 - `docs/SYNC.md`
+- `docs/STREAMING.md`
+- `docs/PERSISTENCE.md`
 
 ## License
 
