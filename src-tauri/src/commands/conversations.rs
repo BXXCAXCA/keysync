@@ -113,7 +113,7 @@ pub fn save_conversation(
         )));
     }
 
-    let service = open_storage(&app)?;
+    let mut service = open_storage(&app)?;
     let conversation_id = match input.id.as_deref().filter(|value| !value.trim().is_empty()) {
         Some(value) => Uuid::parse_str(value)
             .map_err(|err| {
@@ -137,78 +137,80 @@ pub fn save_conversation(
         )))
     })?;
 
-    service
-        .connection()
-        .execute(
-            "INSERT INTO conversations (id, title, provider_id, model_id, system_prompt, params_json, created_at, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
-             ON CONFLICT(id) DO UPDATE SET \
-                title = excluded.title, \
-                provider_id = excluded.provider_id, \
-                model_id = excluded.model_id, \
-                system_prompt = excluded.system_prompt, \
-                params_json = excluded.params_json, \
-                updated_at = excluded.updated_at",
-            params![
-                &conversation_id,
-                &title,
-                input.provider_id.trim(),
-                input.model_id.trim(),
-                input.system_prompt.as_deref(),
-                &params_json,
-                &now,
-                &now,
-            ],
-        )
-        .map_err(storage_error)?;
-
-    service
-        .connection()
-        .execute(
-            "DELETE FROM messages WHERE conversation_id = ?1",
-            params![&conversation_id],
-        )
-        .map_err(storage_error)?;
-
-    for message in input.messages {
-        if message.role.trim().is_empty()
-            || (message.content.trim().is_empty() && message.attachments.is_empty())
-        {
-            continue;
-        }
-
-        let message_id = match message.id.as_deref().filter(|value| !value.trim().is_empty()) {
-            Some(value) => Uuid::parse_str(value)
-                .map_err(|err| {
-                    ErrorPayload::from(KeySyncError::Storage(format!(
-                        "invalid message id: {err}"
-                    )))
-                })?
-                .to_string(),
-            None => Uuid::new_v4().to_string(),
-        };
-        let role = message.role.trim().to_owned();
-        let attachments_json = serde_json::to_string(&message.attachments).map_err(|err| {
-            ErrorPayload::from(KeySyncError::Storage(format!(
-                "serialize message attachments: {err}"
-            )))
-        })?;
-
-        service
-            .connection()
+    {
+        let transaction = service.connection_mut().transaction().map_err(storage_error)?;
+        transaction
             .execute(
-                "INSERT INTO messages (id, conversation_id, role, content, attachments_json, token_usage_json, created_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6)",
+                "INSERT INTO conversations (id, title, provider_id, model_id, system_prompt, params_json, created_at, updated_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
+                 ON CONFLICT(id) DO UPDATE SET \
+                    title = excluded.title, \
+                    provider_id = excluded.provider_id, \
+                    model_id = excluded.model_id, \
+                    system_prompt = excluded.system_prompt, \
+                    params_json = excluded.params_json, \
+                    updated_at = excluded.updated_at",
                 params![
-                    &message_id,
                     &conversation_id,
-                    &role,
-                    &message.content,
-                    &attachments_json,
+                    &title,
+                    input.provider_id.trim(),
+                    input.model_id.trim(),
+                    input.system_prompt.as_deref(),
+                    &params_json,
+                    &now,
                     &now,
                 ],
             )
             .map_err(storage_error)?;
+
+        transaction
+            .execute(
+                "DELETE FROM messages WHERE conversation_id = ?1",
+                params![&conversation_id],
+            )
+            .map_err(storage_error)?;
+
+        for message in input.messages {
+            if message.role.trim().is_empty()
+                || (message.content.trim().is_empty() && message.attachments.is_empty())
+            {
+                continue;
+            }
+
+            let message_id = match message.id.as_deref().filter(|value| !value.trim().is_empty()) {
+                Some(value) => Uuid::parse_str(value)
+                    .map_err(|err| {
+                        ErrorPayload::from(KeySyncError::Storage(format!(
+                            "invalid message id: {err}"
+                        )))
+                    })?
+                    .to_string(),
+                None => Uuid::new_v4().to_string(),
+            };
+            let role = message.role.trim().to_owned();
+            let attachments_json = serde_json::to_string(&message.attachments).map_err(|err| {
+                ErrorPayload::from(KeySyncError::Storage(format!(
+                    "serialize message attachments: {err}"
+                )))
+            })?;
+
+            transaction
+                .execute(
+                    "INSERT INTO messages (id, conversation_id, role, content, attachments_json, token_usage_json, created_at) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6)",
+                    params![
+                        &message_id,
+                        &conversation_id,
+                        &role,
+                        &message.content,
+                        &attachments_json,
+                        &now,
+                    ],
+                )
+                .map_err(storage_error)?;
+        }
+
+        transaction.commit().map_err(storage_error)?;
     }
 
     load_conversation_detail(&service, &conversation_id)
