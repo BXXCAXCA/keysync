@@ -40,6 +40,43 @@ Unknown roles should be treated as `assistant` until the UI supports custom role
 
 `buildContextMessages` is a lightweight frontend approximation. It estimates text length and image cost, then keeps the newest messages under the configured context budget. This is intentionally not provider-tokenizer exact.
 
+## App migration checklist
+
+When wiring `src/App.tsx` to `src/lib/chat.ts`, make the changes in one small commit and verify these exact replacements:
+
+1. Replace the local `ChatMessage` type with `import type { ChatMessage } from "./lib/chat"`.
+2. Remove the local `initialMessages` constant and import it from `./lib/chat`.
+3. Remove local `appendAssistantDelta`, `parseFiniteNumber`, `parsePositiveInt`, `buildContextMessages`, and `titleFromMessages` implementations and import them from `./lib/chat`.
+4. Replace `createStreamId()` with `createClientId("stream")`.
+5. Replace `message.role as ChatMessage["role"]` during persisted conversation loading with `normalizeChatRole(message.role)`.
+6. Keep `PendingImage`, `StoredCredentialPayload`, and `readImageFile` in `App.tsx` until the composer is extracted.
+7. Run the frontend build after the migration: `npm run build`.
+
+Expected `App.tsx` import shape after step 1:
+
+```ts
+import type { ChatMessage } from "./lib/chat";
+import {
+  appendAssistantDelta,
+  buildContextMessages,
+  createClientId,
+  initialMessages,
+  normalizeChatRole,
+  parseFiniteNumber,
+  parsePositiveInt,
+  titleFromMessages,
+} from "./lib/chat";
+```
+
+Expected persisted conversation mapping after step 5:
+
+```ts
+...detail.messages.map((message) => ({
+  role: normalizeChatRole(message.role),
+  content: message.content,
+}))
+```
+
 ## Planned extraction order
 
 1. Wire `src/App.tsx` to import helpers from `src/lib/chat.ts`.
