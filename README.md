@@ -59,6 +59,7 @@ See `docs/CI.md` for local reproduction commands and first-failure triage notes.
 - Image input mapping for OpenAI Chat/Responses, Gemini, and Anthropic request formats.
 - Model parameters wired into chat requests with lightweight frontend context trimming.
 - Local SQLite conversation persistence with sidebar conversation list.
+- Shared chat helper module for message typing, ID generation, parameter parsing, and context trimming.
 - Real vault encryption envelope using XChaCha20-Poly1305 and Argon2id where needed.
 - System keychain backend for local data-key initialization, default record encryption, and status checks.
 - Optional master-password record save/unlock for compatibility.
@@ -78,6 +79,7 @@ See:
 - `docs/STREAMING.md`
 - `docs/PERSISTENCE.md`
 - `docs/CI.md`
+- `docs/FRONTEND.md`
 
 ## License
 
