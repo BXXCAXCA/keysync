@@ -26,7 +26,7 @@ The helper module exists to reduce TypeScript risk in `App.tsx` and to make futu
 
 The hook handles active stream filtering, busy-state updates, assistant delta appends, usage reporting, stream error display, stream cleanup, and conversation persistence after stream completion or stream errors.
 
-The hook stores the latest callbacks and refs in an internal ref, so it can subscribe once without capturing stale App state. When wiring it into `App.tsx`, pass the active stream ref, active provider ref, chat messages ref, message updater, persistence callback, and the relevant React setters.
+The hook stores the latest callbacks and refs in an internal ref, so it can subscribe once without capturing stale App state. `src/App.tsx` now calls this hook instead of owning the raw Tauri listener directly.
 
 ## Safety decisions
 
@@ -59,6 +59,7 @@ The first migration pass completed these replacements:
 3. Local helper copies for assistant deltas, parameter parsing, context trimming, and title generation were removed.
 4. `createStreamId()` was replaced with `createClientId("stream")`.
 5. Persisted conversation loading now uses `normalizeChatRole(message.role)` instead of a type assertion.
+6. The raw `chat-stream-event` listener effect moved from `App.tsx` into `useChatStreamEvents`.
 
 Composer-only helpers remain in `App.tsx` for now:
 
@@ -68,7 +69,6 @@ Composer-only helpers remain in `App.tsx` for now:
 
 ## Planned extraction order
 
-1. Wire `src/App.tsx` to call `useChatStreamEvents` and remove the local stream listener effect.
-2. Move conversation persistence into a `useConversations` hook.
-3. Move vault/WebDAV side panels into smaller inspector components.
-4. Keep provider request types in `src/types.ts` and Tauri wrappers in `src/lib/tauri.ts`.
+1. Move conversation persistence into a `useConversations` hook.
+2. Move vault/WebDAV side panels into smaller inspector components.
+3. Keep provider request types in `src/types.ts` and Tauri wrappers in `src/lib/tauri.ts`.
