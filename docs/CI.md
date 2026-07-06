@@ -1,6 +1,6 @@
-# CI
+# CI and local validation
 
-The repository uses GitHub Actions workflow `.github/workflows/ci.yml`.
+The repository uses GitHub Actions workflow `.github/workflows/ci.yml` as the first reliable compilation signal for remote-only development.
 
 ## Triggers
 
@@ -27,7 +27,9 @@ npm run build
 tsc && vite build
 ```
 
-The workflow intentionally does not enable `actions/setup-node` dependency caching yet because the repository does not currently include a package lockfile. Once a lockfile is committed, npm caching can be re-enabled safely.
+This validates TypeScript strict-mode compilation and Vite production bundling.
+
+The workflow intentionally uses `npm install` instead of `npm ci` because the repository currently does not include a committed `package-lock.json`. Once a lockfile is committed, change the job to `npm ci` and re-enable `actions/setup-node` dependency caching for reproducible installs.
 
 ## Rust cargo check
 
@@ -48,9 +50,43 @@ cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 ```
 
-This keeps quality feedback visible without hiding the primary compile signal while the codebase is still being actively bootstrapped. Once the historical Rust files are rustfmt-clean and clippy-clean, this job can be made blocking.
+This keeps quality feedback visible without hiding the primary compile signal while the codebase is still being actively bootstrapped. Once the historical Rust files are rustfmt-clean and clippy-clean, remove `continue-on-error` so this job becomes blocking.
 
 Cargo dependency caching is enabled with `Swatinem/rust-cache` for the `src-tauri` workspace in both Rust jobs.
+
+## Local reproduction
+
+Use the same commands as CI:
+
+```bash
+npm install --no-audit --no-fund
+npm run build
+cargo check --manifest-path src-tauri/Cargo.toml
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+```
+
+On Linux, install the Tauri dependencies first:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  libwebkit2gtk-4.1-dev \
+  libayatana-appindicator3-dev \
+  librsvg2-dev \
+  patchelf
+```
+
+## Expected first-failure areas
+
+Because recent work touched both the frontend and backend, the first useful CI run may expose one of these areas:
+
+- TypeScript strict-mode issues in `src/App.tsx` around persisted conversation typing.
+- Tauri command argument shape mismatches between `src/lib/tauri.ts` and Rust command signatures.
+- Rust formatting differences after large command modules were added.
+- Clippy warnings in SQLite persistence helpers.
+
+Fix blocking jobs first: `Frontend build` and `Rust cargo check`. Treat `Rust fmt and clippy` as cleanup until it is made blocking.
 
 ## Notes
 
