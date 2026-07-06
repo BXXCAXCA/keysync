@@ -3,6 +3,17 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { KeyRound, MessageSquareText, RefreshCw, Server, ShieldCheck, UploadCloud } from "lucide-react";
 import type { ChatStreamPayload, ConversationSummary, ModelInfo, ProviderTemplate, SecretRecordSummary, SystemKeychainStatus, TestResult, UnifiedMessage, WebDavConfig, WebDavConfigSummary } from "./types";
+import type { ChatMessage } from "./lib/chat";
+import {
+  appendAssistantDelta,
+  buildContextMessages,
+  createClientId,
+  initialMessages,
+  normalizeChatRole,
+  parseFiniteNumber,
+  parsePositiveInt,
+  titleFromMessages,
+} from "./lib/chat";
 import {
   deleteConversation,
   getAppStatus,
@@ -35,74 +46,13 @@ import {
   webdavUploadLocalVaultWithSavedConfig,
 } from "./lib/tauri";
 
-type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 type PendingImage = { name: string; mediaType: string; dataBase64: string };
 type StoredCredentialPayload = { apiKey: string; customHeaders: Array<[string, string]> };
-
-const initialMessages: ChatMessage[] = [
-  { role: "system", content: "System prompt, temperature, context length, and model settings will be configured here." },
-  { role: "assistant", content: "Save a provider credential, select a model, then send a message to test streaming chat." },
-];
 
 function errorMessage(error: unknown): string {
   if (typeof error === "string") return error;
   if (error && typeof error === "object" && "message" in error) return String((error as { message: unknown }).message);
   return "Unknown error";
-}
-
-function appendAssistantDelta(messages: ChatMessage[], delta: string): ChatMessage[] {
-  const next = [...messages];
-  for (let index = next.length - 1; index >= 0; index -= 1) {
-    if (next[index].role === "assistant") {
-      next[index] = { ...next[index], content: `${next[index].content}${delta}` };
-      return next;
-    }
-  }
-  return [...next, { role: "assistant", content: delta }];
-}
-
-function createStreamId(): string {
-  const cryptoWithUuid = crypto as Crypto & { randomUUID?: () => string };
-  return cryptoWithUuid.randomUUID?.() ?? `stream-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function parseFiniteNumber(value: string, fallback: number): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function parsePositiveInt(value: string, fallback: number): number {
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function estimateMessageBudget(message: UnifiedMessage): number {
-  return message.content.length + message.images.length * 1024 + 32;
-}
-
-function buildContextMessages(messages: ChatMessage[], nextMessage: UnifiedMessage, contextLength: number): UnifiedMessage[] {
-  const budget = Math.max(256, contextLength) * 4;
-  const history = messages
-    .filter((message) => message.role !== "system")
-    .map<UnifiedMessage>((message) => ({ role: message.role, content: message.content, images: [] }));
-  const combined = [...history, nextMessage];
-  const selected: UnifiedMessage[] = [];
-  let used = 0;
-
-  for (let index = combined.length - 1; index >= 0; index -= 1) {
-    const message = combined[index];
-    const estimated = estimateMessageBudget(message);
-    if (selected.length > 0 && used + estimated > budget) break;
-    selected.unshift(message);
-    used += estimated;
-  }
-
-  return selected;
-}
-
-function titleFromMessages(messages: ChatMessage[]): string {
-  const firstUser = messages.find((message) => message.role === "user" && message.content.trim());
-  return (firstUser?.content ?? "New conversation").replace(/\s+/g, " ").slice(0, 64);
 }
 
 function readImageFile(file: File): Promise<PendingImage> {
@@ -326,7 +276,7 @@ export default function App() {
       setContextLength(String(typeof params.contextLength === "number" ? params.contextLength : 8192));
       const loadedMessages: ChatMessage[] = [
         { role: "system", content: detail.summary.systemPrompt ?? initialMessages[0].content },
-        ...detail.messages.map((message) => ({ role: message.role as ChatMessage["role"], content: message.content })),
+        ...detail.messages.map((message) => ({ role: normalizeChatRole(message.role), content: message.content })),
       ];
       updateChatMessages(() => loadedMessages.length > 1 ? loadedMessages : initialMessages);
       setChatInput("");
@@ -523,7 +473,7 @@ export default function App() {
     const secret = await unlockSelectedSecret();
     if (!secret) return;
 
-    const streamId = createStreamId();
+    const streamId = createClientId("stream");
     const parsedTemperature = parseFiniteNumber(temperature, 0.7);
     const parsedMaxTokens = parsePositiveInt(maxTokens, 512);
     const parsedContextLength = parsePositiveInt(contextLength, 8192);
