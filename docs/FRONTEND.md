@@ -1,6 +1,6 @@
 # Frontend structure
 
-The current React frontend is intentionally still MVP-oriented, but new shared chat utilities have started moving out of `src/App.tsx`.
+The current React frontend is intentionally still MVP-oriented, but shared chat utilities have started moving out of `src/App.tsx`.
 
 ## Chat helper module
 
@@ -34,25 +34,15 @@ Use `normalizeChatRole(role)` when loading persisted conversation messages. SQLi
 - `user`
 - `assistant`
 
-Unknown roles should be treated as `assistant` until the UI supports custom roles. This prevents unknown persisted roles from leaking into CSS class names or provider context construction.
+Unknown roles are treated as `assistant` until the UI supports custom roles. This prevents unknown persisted roles from leaking into CSS class names or provider context construction.
 
 ### Context trimming
 
 `buildContextMessages` is a lightweight frontend approximation. It estimates text length and image cost, then keeps the newest messages under the configured context budget. This is intentionally not provider-tokenizer exact.
 
-## App migration checklist
+## Completed App migration
 
-When wiring `src/App.tsx` to `src/lib/chat.ts`, make the changes in one small commit and verify these exact replacements:
-
-1. Replace the local `ChatMessage` type with `import type { ChatMessage } from "./lib/chat"`.
-2. Remove the local `initialMessages` constant and import it from `./lib/chat`.
-3. Remove local `appendAssistantDelta`, `parseFiniteNumber`, `parsePositiveInt`, `buildContextMessages`, and `titleFromMessages` implementations and import them from `./lib/chat`.
-4. Replace `createStreamId()` with `createClientId("stream")`.
-5. Replace `message.role as ChatMessage["role"]` during persisted conversation loading with `normalizeChatRole(message.role)`.
-6. Keep `PendingImage`, `StoredCredentialPayload`, and `readImageFile` in `App.tsx` until the composer is extracted.
-7. Run the frontend build after the migration: `npm run build`.
-
-Expected `App.tsx` import shape after step 1:
+`src/App.tsx` now imports the shared chat helpers instead of defining local copies:
 
 ```ts
 import type { ChatMessage } from "./lib/chat";
@@ -68,19 +58,23 @@ import {
 } from "./lib/chat";
 ```
 
-Expected persisted conversation mapping after step 5:
+The first migration pass completed these replacements:
 
-```ts
-...detail.messages.map((message) => ({
-  role: normalizeChatRole(message.role),
-  content: message.content,
-}))
-```
+1. The local `ChatMessage` type was replaced with the imported type.
+2. The local `initialMessages` constant was replaced with the imported constant.
+3. Local helper copies for assistant deltas, parameter parsing, context trimming, and title generation were removed.
+4. `createStreamId()` was replaced with `createClientId("stream")`.
+5. Persisted conversation loading now uses `normalizeChatRole(message.role)` instead of a type assertion.
+
+Composer-only helpers remain in `App.tsx` for now:
+
+- `PendingImage`
+- `StoredCredentialPayload`
+- `readImageFile`
 
 ## Planned extraction order
 
-1. Wire `src/App.tsx` to import helpers from `src/lib/chat.ts`.
-2. Move stream event handling into a `useChatStream` hook.
-3. Move conversation persistence into a `useConversations` hook.
-4. Move vault/WebDAV side panels into smaller inspector components.
-5. Keep provider request types in `src/types.ts` and Tauri wrappers in `src/lib/tauri.ts`.
+1. Move stream event handling into a `useChatStream` hook.
+2. Move conversation persistence into a `useConversations` hook.
+3. Move vault/WebDAV side panels into smaller inspector components.
+4. Keep provider request types in `src/types.ts` and Tauri wrappers in `src/lib/tauri.ts`.
