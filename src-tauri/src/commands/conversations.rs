@@ -66,7 +66,9 @@ pub struct SaveMessageInput {
 }
 
 #[tauri::command]
-pub fn list_conversations(app: tauri::AppHandle) -> std::result::Result<Vec<ConversationSummary>, ErrorPayload> {
+pub fn list_conversations(
+    app: tauri::AppHandle,
+) -> std::result::Result<Vec<ConversationSummary>, ErrorPayload> {
     let service = open_storage(&app)?;
     let mut statement = service
         .connection()
@@ -77,9 +79,7 @@ pub fn list_conversations(app: tauri::AppHandle) -> std::result::Result<Vec<Conv
         )
         .map_err(storage_error)?;
 
-    let rows = statement
-        .query_map([], map_summary_row)
-        .map_err(storage_error)?;
+    let rows = statement.query_map([], map_summary_row).map_err(storage_error)?;
 
     let mut conversations = Vec::new();
     for row in rows {
@@ -89,39 +89,53 @@ pub fn list_conversations(app: tauri::AppHandle) -> std::result::Result<Vec<Conv
 }
 
 #[tauri::command]
-pub fn load_conversation(app: tauri::AppHandle, conversation_id: String) -> std::result::Result<ConversationDetail, ErrorPayload> {
+pub fn load_conversation(
+    app: tauri::AppHandle,
+    conversation_id: String,
+) -> std::result::Result<ConversationDetail, ErrorPayload> {
     let service = open_storage(&app)?;
     load_conversation_detail(&service, &conversation_id)
 }
 
 #[tauri::command]
-pub fn save_conversation(app: tauri::AppHandle, input: SaveConversationInput) -> std::result::Result<ConversationDetail, ErrorPayload> {
+pub fn save_conversation(
+    app: tauri::AppHandle,
+    input: SaveConversationInput,
+) -> std::result::Result<ConversationDetail, ErrorPayload> {
     if input.provider_id.trim().is_empty() {
-        return Err(ErrorPayload::from(KeySyncError::Storage("provider id is required".into())));
+        return Err(ErrorPayload::from(KeySyncError::Storage(
+            "provider id is required".into(),
+        )));
     }
     if input.model_id.trim().is_empty() {
-        return Err(ErrorPayload::from(KeySyncError::Storage("model id is required".into())));
+        return Err(ErrorPayload::from(KeySyncError::Storage(
+            "model id is required".into(),
+        )));
     }
 
     let service = open_storage(&app)?;
     let conversation_id = match input.id.as_deref().filter(|value| !value.trim().is_empty()) {
-        Some(value) => {
-            Uuid::parse_str(value)
-                .map_err(|err| ErrorPayload::from(KeySyncError::Storage(format!("invalid conversation id: {err}"))))?
-                .to_string()
-        }
+        Some(value) => Uuid::parse_str(value)
+            .map_err(|err| {
+                ErrorPayload::from(KeySyncError::Storage(format!(
+                    "invalid conversation id: {err}"
+                )))
+            })?
+            .to_string(),
         None => Uuid::new_v4().to_string(),
     };
     let now = chrono::Utc::now().to_rfc3339();
-    let title = input
-        .title
-        .trim()
-        .chars()
-        .take(80)
-        .collect::<String>();
-    let title = if title.is_empty() { "Untitled conversation".to_owned() } else { title };
-    let params_json = serde_json::to_string(&input.params)
-        .map_err(|err| ErrorPayload::from(KeySyncError::Storage(format!("serialize conversation params: {err}"))))?;
+    let title = input.title.trim().chars().take(80).collect::<String>();
+    let title = if title.is_empty() {
+        "Untitled conversation".to_owned()
+    } else {
+        title
+    };
+    let params_json = serde_json::to_string(&input.params).map_err(|err| {
+        ErrorPayload::from(KeySyncError::Storage(format!(
+            "serialize conversation params: {err}"
+        )))
+    })?;
 
     service
         .connection()
@@ -150,28 +164,49 @@ pub fn save_conversation(app: tauri::AppHandle, input: SaveConversationInput) ->
 
     service
         .connection()
-        .execute("DELETE FROM messages WHERE conversation_id = ?1", params![&conversation_id])
+        .execute(
+            "DELETE FROM messages WHERE conversation_id = ?1",
+            params![&conversation_id],
+        )
         .map_err(storage_error)?;
 
     for message in input.messages {
-        if message.role.trim().is_empty() || (message.content.trim().is_empty() && message.attachments.is_empty()) {
+        if message.role.trim().is_empty()
+            || (message.content.trim().is_empty() && message.attachments.is_empty())
+        {
             continue;
         }
+
         let message_id = match message.id.as_deref().filter(|value| !value.trim().is_empty()) {
             Some(value) => Uuid::parse_str(value)
-                .map_err(|err| ErrorPayload::from(KeySyncError::Storage(format!("invalid message id: {err}"))))?
+                .map_err(|err| {
+                    ErrorPayload::from(KeySyncError::Storage(format!(
+                        "invalid message id: {err}"
+                    )))
+                })?
                 .to_string(),
             None => Uuid::new_v4().to_string(),
         };
         let role = message.role.trim().to_owned();
-        let attachments_json = serde_json::to_string(&message.attachments)
-            .map_err(|err| ErrorPayload::from(KeySyncError::Storage(format!("serialize message attachments: {err}"))))?;
+        let attachments_json = serde_json::to_string(&message.attachments).map_err(|err| {
+            ErrorPayload::from(KeySyncError::Storage(format!(
+                "serialize message attachments: {err}"
+            )))
+        })?;
+
         service
             .connection()
             .execute(
                 "INSERT INTO messages (id, conversation_id, role, content, attachments_json, token_usage_json, created_at) \
                  VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6)",
-                params![&message_id, &conversation_id, &role, &message.content, &attachments_json, &now],
+                params![
+                    &message_id,
+                    &conversation_id,
+                    &role,
+                    &message.content,
+                    &attachments_json,
+                    &now,
+                ],
             )
             .map_err(storage_error)?;
     }
@@ -180,21 +215,33 @@ pub fn save_conversation(app: tauri::AppHandle, input: SaveConversationInput) ->
 }
 
 #[tauri::command]
-pub fn delete_conversation(app: tauri::AppHandle, conversation_id: String) -> std::result::Result<bool, ErrorPayload> {
+pub fn delete_conversation(
+    app: tauri::AppHandle,
+    conversation_id: String,
+) -> std::result::Result<bool, ErrorPayload> {
     let service = open_storage(&app)?;
     parse_uuid(&conversation_id, "conversation")?;
     service
         .connection()
-        .execute("DELETE FROM messages WHERE conversation_id = ?1", params![&conversation_id])
+        .execute(
+            "DELETE FROM messages WHERE conversation_id = ?1",
+            params![&conversation_id],
+        )
         .map_err(storage_error)?;
     let deleted = service
         .connection()
-        .execute("DELETE FROM conversations WHERE id = ?1", params![&conversation_id])
+        .execute(
+            "DELETE FROM conversations WHERE id = ?1",
+            params![&conversation_id],
+        )
         .map_err(storage_error)?;
     Ok(deleted > 0)
 }
 
-fn load_conversation_detail(service: &StorageService, conversation_id: &str) -> std::result::Result<ConversationDetail, ErrorPayload> {
+fn load_conversation_detail(
+    service: &StorageService,
+    conversation_id: &str,
+) -> std::result::Result<ConversationDetail, ErrorPayload> {
     parse_uuid(conversation_id, "conversation")?;
     let summary = service
         .connection()
@@ -261,15 +308,20 @@ fn open_storage(app: &tauri::AppHandle) -> std::result::Result<StorageService, E
 }
 
 fn local_db_path(app: &tauri::AppHandle) -> std::result::Result<PathBuf, ErrorPayload> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|err| ErrorPayload::from(KeySyncError::Storage(format!("failed to resolve app data directory: {err}"))))?;
+    let dir = app.path().app_data_dir().map_err(|err| {
+        ErrorPayload::from(KeySyncError::Storage(format!(
+            "failed to resolve app data directory: {err}"
+        )))
+    })?;
     Ok(dir.join(LOCAL_DB_FILE))
 }
 
 fn parse_uuid(value: &str, label: &str) -> std::result::Result<Uuid, ErrorPayload> {
-    Uuid::parse_str(value).map_err(|err| ErrorPayload::from(KeySyncError::Storage(format!("invalid {label} id: {err}"))))
+    Uuid::parse_str(value).map_err(|err| {
+        ErrorPayload::from(KeySyncError::Storage(format!(
+            "invalid {label} id: {err}"
+        )))
+    })
 }
 
 fn storage_error(err: rusqlite::Error) -> ErrorPayload {
