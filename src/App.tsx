@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { KeyRound, MessageSquareText, RefreshCw, Server, ShieldCheck, UploadCloud } from "lucide-react";
-import type { ChatStreamPayload, ConversationSummary, ModelInfo, ProviderTemplate, SecretRecordSummary, SystemKeychainStatus, TestResult, UnifiedMessage, WebDavConfig, WebDavConfigSummary } from "./types";
+import type { ConversationSummary, ModelInfo, ProviderTemplate, SecretRecordSummary, SystemKeychainStatus, TestResult, UnifiedMessage, WebDavConfig, WebDavConfigSummary } from "./types";
 import type { ChatMessage } from "./lib/chat";
 import {
   appendAssistantDelta,
@@ -14,6 +13,7 @@ import {
   parsePositiveInt,
   titleFromMessages,
 } from "./lib/chat";
+import { useChatStreamEvents } from "./hooks/useChatStreamEvents";
 import {
   deleteConversation,
   getAppStatus,
@@ -124,6 +124,17 @@ export default function App() {
     setChatMessages(next);
   }
 
+  useChatStreamEvents({
+    activeStreamIdRef,
+    activeProviderIdRef,
+    chatMessagesRef,
+    updateChatMessages,
+    persistCurrentConversation,
+    setBusy,
+    setCurrentStreamId,
+    setTestResult,
+  });
+
   useEffect(() => {
     activeProviderIdRef.current = activeProviderId;
     selectedModelRef.current = selectedModel;
@@ -140,55 +151,6 @@ export default function App() {
     reloadConversations();
     reloadSavedWebDavSummary();
     reloadSystemKeychainStatus();
-  }, []);
-
-  useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
-    listen<ChatStreamPayload>("chat-stream-event", (event) => {
-      const payload = event.payload;
-      if (payload.streamId !== activeStreamIdRef.current) return;
-
-      if (payload.event.type === "start") {
-        setBusy(true);
-        return;
-      }
-
-      if (payload.event.type === "delta") {
-        updateChatMessages((messages) => appendAssistantDelta(messages, payload.event.text));
-        return;
-      }
-
-      if (payload.event.type === "usage") {
-        setTestResult((current) => ({
-          ok: true,
-          providerId: current?.providerId ?? activeProviderIdRef.current,
-          message: `Usage: input ${payload.event.inputTokens ?? "?"}, output ${payload.event.outputTokens ?? "?"}`,
-        }));
-        return;
-      }
-
-      if (payload.event.type === "error") {
-        updateChatMessages((messages) => [...messages, { role: "assistant", content: `Stream error: ${payload.event.message}` }]);
-        setBusy(false);
-        activeStreamIdRef.current = null;
-        setCurrentStreamId(null);
-        void persistCurrentConversation(chatMessagesRef.current);
-        return;
-      }
-
-      if (payload.event.type === "done") {
-        setBusy(false);
-        activeStreamIdRef.current = null;
-        setCurrentStreamId(null);
-        void persistCurrentConversation(chatMessagesRef.current);
-      }
-    }).then((dispose) => {
-      unlisten = dispose;
-    });
-
-    return () => {
-      unlisten?.();
-    };
   }, []);
 
   const activeProvider = useMemo(
