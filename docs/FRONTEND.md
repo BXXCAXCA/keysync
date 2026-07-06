@@ -28,6 +28,21 @@ The hook handles active stream filtering, busy-state updates, assistant delta ap
 
 The hook stores the latest callbacks and refs in an internal ref, so it can subscribe once without capturing stale App state. `src/App.tsx` now calls this hook instead of owning the raw Tauri listener directly.
 
+## Conversation hook
+
+`src/hooks/useConversations.ts` owns the reusable conversation store layer.
+
+The hook manages:
+
+- conversation summaries
+- current conversation ID
+- loading conversation lists from SQLite through Tauri commands
+- saving the current conversation after stream completion or failure
+- loading existing conversations with persisted role normalization
+- deleting conversations and refreshing the sidebar list
+
+The hook is intentionally state-oriented rather than UI-oriented. It returns normalized conversation data for `App.tsx` to apply to provider/model/message state, which keeps the hook reusable when the UI is later split into smaller components.
+
 ## Safety decisions
 
 ### Client-generated IDs
@@ -69,6 +84,6 @@ Composer-only helpers remain in `App.tsx` for now:
 
 ## Planned extraction order
 
-1. Move conversation persistence into a `useConversations` hook.
+1. Wire `src/App.tsx` to use `useConversations` for sidebar list state, conversation save/load, and delete.
 2. Move vault/WebDAV side panels into smaller inspector components.
 3. Keep provider request types in `src/types.ts` and Tauri wrappers in `src/lib/tauri.ts`.
