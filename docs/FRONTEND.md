@@ -20,6 +20,14 @@ The current React frontend is intentionally still MVP-oriented, but shared chat 
 
 The helper module exists to reduce TypeScript risk in `App.tsx` and to make future extraction into hooks/components safer.
 
+## Chat stream event hook
+
+`src/hooks/useChatStreamEvents.ts` owns the Tauri `chat-stream-event` subscription.
+
+The hook handles active stream filtering, busy-state updates, assistant delta appends, usage reporting, stream error display, stream cleanup, and conversation persistence after stream completion or stream errors.
+
+The hook stores the latest callbacks and refs in an internal ref, so it can subscribe once without capturing stale App state. When wiring it into `App.tsx`, pass the active stream ref, active provider ref, chat messages ref, message updater, persistence callback, and the relevant React setters.
+
 ## Safety decisions
 
 ### Client-generated IDs
@@ -42,21 +50,7 @@ Unknown roles are treated as `assistant` until the UI supports custom roles. Thi
 
 ## Completed App migration
 
-`src/App.tsx` now imports the shared chat helpers instead of defining local copies:
-
-```ts
-import type { ChatMessage } from "./lib/chat";
-import {
-  appendAssistantDelta,
-  buildContextMessages,
-  createClientId,
-  initialMessages,
-  normalizeChatRole,
-  parseFiniteNumber,
-  parsePositiveInt,
-  titleFromMessages,
-} from "./lib/chat";
-```
+`src/App.tsx` now imports shared chat helpers instead of defining local copies.
 
 The first migration pass completed these replacements:
 
@@ -74,7 +68,7 @@ Composer-only helpers remain in `App.tsx` for now:
 
 ## Planned extraction order
 
-1. Move stream event handling into a `useChatStream` hook.
+1. Wire `src/App.tsx` to call `useChatStreamEvents` and remove the local stream listener effect.
 2. Move conversation persistence into a `useConversations` hook.
 3. Move vault/WebDAV side panels into smaller inspector components.
 4. Keep provider request types in `src/types.ts` and Tauri wrappers in `src/lib/tauri.ts`.
