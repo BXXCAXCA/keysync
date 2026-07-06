@@ -1,27 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { KeyRound, MessageSquareText, RefreshCw, Server, ShieldCheck, UploadCloud } from "lucide-react";
-import type { ConversationSummary, ModelInfo, ProviderTemplate, SecretRecordSummary, SystemKeychainStatus, TestResult, UnifiedMessage, WebDavConfig, WebDavConfigSummary } from "./types";
+import type { ModelInfo, ProviderTemplate, SecretRecordSummary, SystemKeychainStatus, TestResult, UnifiedMessage, WebDavConfig, WebDavConfigSummary } from "./types";
 import type { ChatMessage } from "./lib/chat";
 import {
   appendAssistantDelta,
   buildContextMessages,
   createClientId,
   initialMessages,
-  normalizeChatRole,
   parseFiniteNumber,
   parsePositiveInt,
-  titleFromMessages,
 } from "./lib/chat";
 import { useChatStreamEvents } from "./hooks/useChatStreamEvents";
+import { useConversations } from "./hooks/useConversations";
 import {
-  deleteConversation,
   getAppStatus,
-  listConversations,
   listModelsWithKey,
-  loadConversation,
   loadProviderTemplates,
-  saveConversation,
   startChatStreamWithKey,
   stopChatStream,
   templateToConfig,
@@ -98,8 +93,6 @@ export default function App() {
   const [chatInput, setChatInput] = useState("");
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(initialMessages);
-  const [conversationSummaries, setConversationSummaries] = useState<ConversationSummary[]>([]);
-  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [currentStreamId, setCurrentStreamId] = useState<string | null>(null);
   const [temperature, setTemperature] = useState("0.7");
   const [maxTokens, setMaxTokens] = useState("512");
@@ -108,6 +101,14 @@ export default function App() {
   const [savedWebdavSummary, setSavedWebdavSummary] = useState<WebDavConfigSummary | null>(null);
   const [syncMessage, setSyncMessage] = useState("");
   const [keychainStatus, setKeychainStatus] = useState<SystemKeychainStatus | null>(null);
+  const {
+    conversationSummaries,
+    currentConversationId,
+    saveCurrentConversation,
+    loadExistingConversation,
+    deleteExistingConversation,
+    resetCurrentConversation,
+  } = useConversations();
   const activeStreamIdRef = useRef<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const chatMessagesRef = useRef<ChatMessage[]>(initialMessages);
@@ -148,7 +149,6 @@ export default function App() {
     loadProviderTemplates().then(setTemplates);
     getAppStatus().then(setStatus);
     reloadVaultRecords();
-    reloadConversations();
     reloadSavedWebDavSummary();
     reloadSystemKeychainStatus();
   }, []);
@@ -172,44 +172,20 @@ export default function App() {
     setSelectedSecretId("");
   }, [activeProviderId]);
 
-  async function reloadConversations() {
-    try {
-      setConversationSummaries(await listConversations());
-    } catch {
-      setConversationSummaries([]);
-    }
-  }
-
   async function persistCurrentConversation(messages: ChatMessage[] = chatMessagesRef.current) {
-    if (!selectedModelRef.current) return;
-    const persistedMessages = messages
-      .filter((message) => message.role !== "system")
-      .filter((message) => !(message.role === "assistant" && message.content === initialMessages[1].content))
-      .filter((message) => message.content.trim());
-    if (!persistedMessages.some((message) => message.role === "user")) return;
-
-    const systemPrompt = messages.find((message) => message.role === "system")?.content;
     try {
-      const detail = await saveConversation({
-        id: currentConversationIdRef.current ?? undefined,
-        title: titleFromMessages(persistedMessages),
+      const detail = await saveCurrentConversation({
+        id: currentConversationIdRef.current,
         providerId: activeProviderIdRef.current,
         modelId: selectedModelRef.current,
-        systemPrompt,
-        params: {
-          temperature: parseFiniteNumber(temperatureRef.current, 0.7),
-          maxTokens: parsePositiveInt(maxTokensRef.current, 512),
-          contextLength: parsePositiveInt(contextLengthRef.current, 8192),
-        },
-        messages: persistedMessages.map((message) => ({
-          role: message.role,
-          content: message.content,
-          attachments: [],
-        })),
+        messages,
+        temperature: temperatureRef.current,
+        maxTokens: maxTokensRef.current,
+        contextLength: contextLengthRef.current,
       });
-      currentConversationIdRef.current = detail.summary.id;
-      setCurrentConversationId(detail.summary.id);
-      await reloadConversations();
+      if (detail) {
+        currentConversationIdRef.current = detail.summary.id;
+      }
     } catch (error) {
       setTestResult({ ok: false, providerId: activeProviderIdRef.current, message: `Conversation save failed: ${errorMessage(error)}` });
     }
@@ -218,7 +194,7 @@ export default function App() {
   function handleNewConversation() {
     activeStreamIdRef.current = null;
     currentConversationIdRef.current = null;
-    setCurrentConversationId(null);
+    resetCurrentConversation();
     updateChatMessages(() => initialMessages);
     setChatInput("");
     setPendingImages([]);
@@ -227,20 +203,14 @@ export default function App() {
 
   async function handleLoadConversation(conversationId: string) {
     try {
-      const detail = await loadConversation(conversationId);
-      currentConversationIdRef.current = detail.summary.id;
-      setCurrentConversationId(detail.summary.id);
-      setActiveProviderId(detail.summary.providerId);
-      setTimeout(() => setSelectedModel(detail.summary.modelId), 0);
-      const params = detail.summary.params;
-      setTemperature(String(typeof params.temperature === "number" ? params.temperature : 0.7));
-      setMaxTokens(String(typeof params.maxTokens === "number" ? params.maxTokens : 512));
-      setContextLength(String(typeof params.contextLength === "number" ? params.contextLength : 8192));
-      const loadedMessages: ChatMessage[] = [
-        { role: "system", content: detail.summary.systemPrompt ?? initialMessages[0].content },
-        ...detail.messages.map((message) => ({ role: normalizeChatRole(message.role), content: message.content })),
-      ];
-      updateChatMessages(() => loadedMessages.length > 1 ? loadedMessages : initialMessages);
+      const loaded = await loadExistingConversation(conversationId);
+      currentConversationIdRef.current = loaded.detail.summary.id;
+      setActiveProviderId(loaded.detail.summary.providerId);
+      setTimeout(() => setSelectedModel(loaded.detail.summary.modelId), 0);
+      setTemperature(loaded.temperature);
+      setMaxTokens(loaded.maxTokens);
+      setContextLength(loaded.contextLength);
+      updateChatMessages(() => loaded.messages);
       setChatInput("");
       setPendingImages([]);
     } catch (error) {
@@ -249,12 +219,12 @@ export default function App() {
   }
 
   async function handleDeleteConversation(conversationId: string) {
+    const wasCurrent = currentConversationIdRef.current === conversationId;
     try {
-      await deleteConversation(conversationId);
-      if (currentConversationIdRef.current === conversationId) {
+      await deleteExistingConversation(conversationId);
+      if (wasCurrent) {
         handleNewConversation();
       }
-      await reloadConversations();
     } catch (error) {
       setTestResult({ ok: false, providerId: activeProviderIdRef.current, message: errorMessage(error) });
     }
