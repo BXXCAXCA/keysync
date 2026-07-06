@@ -45,6 +45,12 @@ The hook is intentionally state-oriented rather than UI-oriented. It returns nor
 
 `src/App.tsx` now uses this hook for sidebar list state, active conversation ID, save, load, delete, and reset operations.
 
+## Inspector components
+
+`src/components/WebDavSyncCard.tsx` owns the WebDAV sync panel UI. It receives the current WebDAV config, saved config summary, sync message, busy state, and handler callbacks from `App.tsx`.
+
+The component handles the form layout and button disabled states, while `App.tsx` still owns the actual WebDAV side effects for now. This keeps extraction low-risk and makes the next step easier: moving WebDAV state and actions into a dedicated hook.
+
 ## Safety decisions
 
 ### Client-generated IDs
@@ -78,6 +84,7 @@ The migration completed these replacements:
 5. Persisted conversation loading now uses `normalizeChatRole(message.role)` through `useConversations` instead of a type assertion.
 6. The raw `chat-stream-event` listener effect moved from `App.tsx` into `useChatStreamEvents`.
 7. Conversation list/current/save/load/delete/reset logic moved from `App.tsx` into `useConversations`.
+8. The WebDAV sync panel JSX moved from `App.tsx` into `WebDavSyncCard`.
 
 Composer-only helpers remain in `App.tsx` for now:
 
@@ -87,5 +94,6 @@ Composer-only helpers remain in `App.tsx` for now:
 
 ## Planned extraction order
 
-1. Move vault/WebDAV side panels into smaller inspector components.
-2. Keep provider request types in `src/types.ts` and Tauri wrappers in `src/lib/tauri.ts`.
+1. Move WebDAV state and actions into a `useWebDavSync` hook.
+2. Move API key vault and system keychain cards into inspector components.
+3. Keep provider request types in `src/types.ts` and Tauri wrappers in `src/lib/tauri.ts`.
