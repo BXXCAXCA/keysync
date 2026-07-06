@@ -43,6 +43,8 @@ The hook manages:
 
 The hook is intentionally state-oriented rather than UI-oriented. It returns normalized conversation data for `App.tsx` to apply to provider/model/message state, which keeps the hook reusable when the UI is later split into smaller components.
 
+`src/App.tsx` now uses this hook for sidebar list state, active conversation ID, save, load, delete, and reset operations.
+
 ## Safety decisions
 
 ### Client-generated IDs
@@ -67,14 +69,15 @@ Unknown roles are treated as `assistant` until the UI supports custom roles. Thi
 
 `src/App.tsx` now imports shared chat helpers instead of defining local copies.
 
-The first migration pass completed these replacements:
+The migration completed these replacements:
 
 1. The local `ChatMessage` type was replaced with the imported type.
 2. The local `initialMessages` constant was replaced with the imported constant.
 3. Local helper copies for assistant deltas, parameter parsing, context trimming, and title generation were removed.
 4. `createStreamId()` was replaced with `createClientId("stream")`.
-5. Persisted conversation loading now uses `normalizeChatRole(message.role)` instead of a type assertion.
+5. Persisted conversation loading now uses `normalizeChatRole(message.role)` through `useConversations` instead of a type assertion.
 6. The raw `chat-stream-event` listener effect moved from `App.tsx` into `useChatStreamEvents`.
+7. Conversation list/current/save/load/delete/reset logic moved from `App.tsx` into `useConversations`.
 
 Composer-only helpers remain in `App.tsx` for now:
 
@@ -84,6 +87,5 @@ Composer-only helpers remain in `App.tsx` for now:
 
 ## Planned extraction order
 
-1. Wire `src/App.tsx` to use `useConversations` for sidebar list state, conversation save/load, and delete.
-2. Move vault/WebDAV side panels into smaller inspector components.
-3. Keep provider request types in `src/types.ts` and Tauri wrappers in `src/lib/tauri.ts`.
+1. Move vault/WebDAV side panels into smaller inspector components.
+2. Keep provider request types in `src/types.ts` and Tauri wrappers in `src/lib/tauri.ts`.
