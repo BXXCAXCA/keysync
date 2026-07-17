@@ -69,6 +69,7 @@ See `docs/CI.md` for local reproduction commands and first-failure triage notes.
 - Manual WebDAV test/upload/download for the encrypted vault file.
 - WebDAV encrypted config storage, merge downloads, and conflict review UI.
 - Encrypted global and provider-specific proxy configuration wired to HTTP/HTTPS/SOCKS5 Provider requests.
+- Custom Provider templates persisted in encrypted local settings and editable from the inspector.
 - Vault, WebDAV, proxy, SQLite, Gemini, and Anthropic module boundaries.
 
 ## Architecture

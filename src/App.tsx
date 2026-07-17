@@ -135,6 +135,7 @@ export default function App() {
   const [keychainStatus, setKeychainStatus] = useState<SystemKeychainStatus | null>(null);
   const [plaintextExportConfirmation, setPlaintextExportConfirmation] = useState("");
   const [appSettings, setAppSettings] = useState<AppSettings>({ providerProxyUrls: {}, providerProxyDisabled: [], customProviderTemplates: [] });
+  const [customProviderJson, setCustomProviderJson] = useState("");
   const {
     conversationSummaries,
     currentConversationId,
@@ -731,6 +732,29 @@ export default function App() {
     }
   }
 
+  async function handleSaveCustomProvider() {
+    try {
+      const template = JSON.parse(customProviderJson) as ProviderTemplate;
+      if (!template.id || !template.name || !template.kind || !template.baseUrl) {
+        throw new Error("Template requires id, name, kind, and baseUrl.");
+      }
+      const saved = await saveAppSettings({
+        ...appSettings,
+        customProviderTemplates: [
+          ...appSettings.customProviderTemplates.filter((item) => item.id !== template.id),
+          { ...template, editable: true },
+        ],
+      });
+      setAppSettings(saved);
+      setTemplates(await loadProviderTemplates());
+      setActiveProviderId(template.id);
+      setCustomProviderJson("");
+      setTestResult({ ok: true, providerId: template.id, message: `Saved custom provider ${template.name}.` });
+    } catch (error) {
+      setTestResult(activeProvider ? { ok: false, providerId: activeProvider.id, message: errorMessage(error) } : null);
+    }
+  }
+
   async function handleMigrateSavedKey() {
     if (!activeProvider || !selectedSecretId || !masterPassword) return;
     setBusy(true);
@@ -855,6 +879,7 @@ export default function App() {
         />
         {conflictRecords.length > 0 && <section className="card"><h2>Conflict review</h2><p>Remote conflict copies were preserved during merge. Rename to keep them, or delete duplicate copies.</p><div className="model-list">{conflictRecords.map((record) => <span key={record.id}>{record.displayName}<small>{record.providerId} · {record.updatedAt}</small><input value={conflictRename[record.id] ?? record.displayName.replace(" [conflict remote]", "")} onChange={(event) => setConflictRename({ ...conflictRename, [record.id]: event.target.value })} /><div className="button-row"><button onClick={() => void handleAcceptConflict(record)} disabled={busy}>Keep renamed</button><button className="danger" onClick={() => void deleteRecord(record.id, "Deleted conflict copy.")} disabled={busy}>Delete conflict</button></div></span>)}</div></section>}
         <section className="card"><h2>Active provider</h2>{activeProvider ? <dl><dt>Name</dt><dd>{activeProvider.name}</dd><dt>Base URL</dt><dd>{activeProvider.baseUrl}</dd><dt>Streaming</dt><dd>{activeProvider.supportsStreaming ? "Supported" : "Not supported"}</dd><dt>Images</dt><dd>{activeProvider.supportsImages ? "Supported" : "Not supported"}</dd></dl> : <p>No provider loaded.</p>}</section>
+        <section className="card"><h2>Custom provider template</h2><p>Paste an OpenAI-compatible or provider-specific template. It is stored in encrypted local settings.</p><textarea value={customProviderJson} onChange={(event) => setCustomProviderJson(event.target.value)} placeholder={'{"id":"my-provider","name":"My Provider","kind":"openai_compatible","baseUrl":"https://api.example.com/v1","modelsPath":"/models","chatPath":"/chat/completions","supportsStreaming":true,"supportsImages":false}'} /><button className="primary full" onClick={() => void handleSaveCustomProvider()} disabled={!customProviderJson.trim()}>Save custom template</button></section>
         <section className="card"><h2>Models</h2>{models.length ? <><label>Selected model<select value={selectedModel} onChange={(event) => applySelectedModel(event.target.value)}>{models.filter((model) => !model.isHidden || model.id === selectedModel).map((model) => <option key={model.id} value={model.id}>{model.isFavorite ? "★ " : ""}{model.alias || model.displayName}</option>)}</select></label>{selectedModelInfo && <><label>Model alias<input value={modelAlias} onChange={(event) => setModelAlias(event.target.value)} placeholder={selectedModelInfo.displayName} /></label><div className="button-row"><button onClick={() => void handleSaveModelPreferences()}>Save alias</button><button onClick={() => void handleSaveModelPreferences({ favorite: !selectedModelInfo.isFavorite })}>{selectedModelInfo.isFavorite ? "Unfavorite" : "Favorite"}</button></div><div className="button-row"><button onClick={() => void handleSaveModelPreferences({ saveCurrentDefaults: true })}>Save current params</button><button className="danger inline" onClick={() => void handleSaveModelPreferences({ hidden: !selectedModelInfo.isHidden })}>{selectedModelInfo.isHidden ? "Show model" : "Hide model"}</button></div></>}<div className="model-list">{models.filter((model) => !model.isHidden).slice(0, 8).map((model) => <span key={model.id}>{model.isFavorite ? "★ " : ""}{model.alias || model.displayName}<small>{model.capabilities.join(", ")}</small></span>)}</div></> : <p>No models loaded yet.</p>}</section>
         <section className="card"><h2>Model params</h2><label>System prompt<textarea value={chatMessages.find((message) => message.role === "system")?.content ?? ""} onChange={(event) => updateChatMessages((messages) => [{ role: "system", content: event.target.value }, ...messages.filter((message) => message.role !== "system")])} placeholder="You are a helpful assistant." /></label><label>Temperature<input type="number" value={temperature} min="0" max="2" step="0.1" onChange={(event) => setTemperature(event.target.value)} /></label><label>Max output tokens<input type="number" value={maxTokens} min="1" step="1" onChange={(event) => setMaxTokens(event.target.value)} /></label><label>Context length<input type="number" value={contextLength} min="256" step="256" onChange={(event) => setContextLength(event.target.value)} /></label><p>Context length trims recent history before sending. Images are retained in saved conversations and included only when context keeps that turn.</p></section>
       </aside>
