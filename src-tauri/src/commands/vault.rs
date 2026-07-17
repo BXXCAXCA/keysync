@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::Manager;
 use uuid::Uuid;
 
@@ -224,6 +224,29 @@ pub fn vault_decrypt_secret_with_system_keychain(app: tauri::AppHandle, record_i
     service.decrypt_secret_record_with_data_key(record, &data_key).map_err(ErrorPayload::from)
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaintextBackupRecord {
+    pub provider_id: String,
+    pub display_name: String,
+    pub payload: SecretPayload,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaintextBackup {
+    pub version: u32,
+    pub exported_at: String,
+    pub records: Vec<PlaintextBackupRecord>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultImportResult {
+    pub imported: usize,
+    pub conflicts: usize,
+}
+
 #[tauri::command]
 pub fn vault_migrate_secret_to_system_keychain(
     app: tauri::AppHandle,
@@ -301,6 +324,131 @@ pub fn vault_rename_secret_record(app: tauri::AppHandle, record_id: String, disp
 
 fn load_or_create_system_data_key() -> std::result::Result<Vec<u8>, ErrorPayload> {
     keychain::load_or_create_data_key().map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub fn vault_export_encrypted_backup(
+    app: tauri::AppHandle,
+) -> std::result::Result<String, ErrorPayload> {
+    let path = local_vault_path(&app)?;
+    let vault_file = VaultService::new()
+        .load_file(&path, LOCAL_DEVICE_ID.to_owned())
+        .map_err(ErrorPayload::from)?;
+    crate::vault::store::serialize_vault_file(&vault_file).map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub fn vault_import_encrypted_backup(
+    app: tauri::AppHandle,
+    content: String,
+) -> std::result::Result<VaultImportResult, ErrorPayload> {
+    let imported = crate::vault::store::parse_vault_file(&content).map_err(ErrorPayload::from)?;
+    let path = local_vault_path(&app)?;
+    let service = VaultService::new();
+    let mut local = service
+        .load_file(&path, LOCAL_DEVICE_ID.to_owned())
+        .map_err(ErrorPayload::from)?;
+    let report = crate::vault::store::merge_remote_records(&mut local, imported);
+    service.save_file(&path, &local).map_err(ErrorPayload::from)?;
+    Ok(VaultImportResult {
+        imported: report.added,
+        conflicts: report.conflicts,
+    })
+}
+
+#[tauri::command]
+pub fn vault_export_plaintext_backup(
+    app: tauri::AppHandle,
+    confirmation: String,
+    master_password: Option<String>,
+) -> std::result::Result<PlaintextBackup, ErrorPayload> {
+    if confirmation.trim() != "EXPORT" {
+        return Err(ErrorPayload::from(KeySyncError::Vault(
+            "type EXPORT to confirm plaintext credential export".into(),
+        )));
+    }
+
+    let path = local_vault_path(&app)?;
+    let service = VaultService::new();
+    let vault_file = service
+        .load_file(&path, LOCAL_DEVICE_ID.to_owned())
+        .map_err(ErrorPayload::from)?;
+    let system_data_key = keychain::load_data_key().ok();
+    let master_password = master_password.filter(|value| !value.is_empty());
+    let mut records = Vec::with_capacity(vault_file.records.len());
+
+    for record in &vault_file.records {
+        let payload = system_data_key
+            .as_deref()
+            .and_then(|data_key| service.decrypt_secret_record_with_data_key(record, data_key).ok())
+            .or_else(|| {
+                master_password.as_deref().and_then(|password| {
+                    service
+                        .decrypt_secret_record_with_master_password(record, password)
+                        .ok()
+                })
+            })
+            .ok_or_else(|| {
+                ErrorPayload::from(KeySyncError::Vault(format!(
+                    "unable to unlock '{}' for plaintext export; provide the matching master password",
+                    record.display_name
+                )))
+            })?;
+        records.push(PlaintextBackupRecord {
+            provider_id: record.provider_id.clone(),
+            display_name: record.display_name.clone(),
+            payload,
+        });
+    }
+
+    Ok(PlaintextBackup {
+        version: 1,
+        exported_at: chrono::Utc::now().to_rfc3339(),
+        records,
+    })
+}
+
+#[tauri::command]
+pub fn vault_import_plaintext_backup(
+    app: tauri::AppHandle,
+    content: String,
+) -> std::result::Result<VaultImportResult, ErrorPayload> {
+    let backup: PlaintextBackup = serde_json::from_str(&content).map_err(|error| {
+        ErrorPayload::from(KeySyncError::Vault(format!(
+            "parse plaintext backup: {error}"
+        )))
+    })?;
+    if backup.version != 1 {
+        return Err(ErrorPayload::from(KeySyncError::Vault(format!(
+            "unsupported plaintext backup version: {}",
+            backup.version
+        ))));
+    }
+
+    let data_key = load_or_create_system_data_key()?;
+    let path = local_vault_path(&app)?;
+    let service = VaultService::new();
+    let mut vault_file = service
+        .load_file(&path, LOCAL_DEVICE_ID.to_owned())
+        .map_err(ErrorPayload::from)?;
+    let mut imported = 0;
+    for record in backup.records {
+        let record = service
+            .create_secret_record_with_data_key(
+                record.provider_id,
+                record.display_name,
+                record.payload,
+                &data_key,
+            )
+            .map_err(ErrorPayload::from)?;
+        crate::vault::store::upsert_record(&mut vault_file, record);
+        imported += 1;
+    }
+    service.save_file(&path, &vault_file).map_err(ErrorPayload::from)?;
+    Ok(VaultImportResult {
+        imported,
+        conflicts: 0,
+    })
 }
 
 fn local_vault_path(app: &tauri::AppHandle) -> std::result::Result<PathBuf, ErrorPayload> {

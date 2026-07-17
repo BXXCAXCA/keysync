@@ -65,6 +65,7 @@ See `docs/CI.md` for local reproduction commands and first-failure triage notes.
 - System keychain backend for local data-key initialization, default record encryption, and status checks.
 - Optional master-password record save/unlock for compatibility.
 - Local encrypted vault record file for saved provider credentials.
+- Encrypted backup import/export, plus confirmation-gated plaintext JSON migration export.
 - Manual WebDAV test/upload/download for the encrypted vault file.
 - WebDAV encrypted config storage, merge downloads, and conflict review UI.
 - Encrypted global and provider-specific proxy configuration wired to HTTP/HTTPS/SOCKS5 Provider requests.

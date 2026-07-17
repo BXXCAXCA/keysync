@@ -158,6 +158,21 @@ export interface SecretRecordSummary {
   updatedAt: string;
 }
 
+export interface PlaintextBackup {
+  version: number;
+  exportedAt: string;
+  records: Array<{
+    providerId: string;
+    displayName: string;
+    payload: SecretPayload;
+  }>;
+}
+
+export interface VaultImportResult {
+  imported: number;
+  conflicts: number;
+}
+
 export interface VaultSecurityProfile {
   defaultMode: string;
   optionalMode: string;

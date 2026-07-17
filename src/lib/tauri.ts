@@ -10,11 +10,13 @@ import type {
   SaveConversationInput,
   SecretPayload,
   SecretRecordSummary,
+  PlaintextBackup,
   SystemKeychainStatus,
   TestResult,
   UnifiedChatRequest,
   UpdateModelPreferencesInput,
   VaultSecurityProfile,
+  VaultImportResult,
   WebDavConfig,
   WebDavConfigSummary,
   WebDavSyncResult,
@@ -165,6 +167,22 @@ export async function vaultDeleteSecretRecord(recordId: string): Promise<boolean
 
 export async function vaultRenameSecretRecord(recordId: string, displayName: string): Promise<SecretRecordSummary> {
   return await invoke<SecretRecordSummary>("vault_rename_secret_record", { recordId, displayName });
+}
+
+export async function vaultExportEncryptedBackup(): Promise<string> {
+  return await invoke<string>("vault_export_encrypted_backup");
+}
+
+export async function vaultImportEncryptedBackup(content: string): Promise<VaultImportResult> {
+  return await invoke<VaultImportResult>("vault_import_encrypted_backup", { content });
+}
+
+export async function vaultExportPlaintextBackup(confirmation: string, masterPassword?: string): Promise<PlaintextBackup> {
+  return await invoke<PlaintextBackup>("vault_export_plaintext_backup", { confirmation, masterPassword: masterPassword || null });
+}
+
+export async function vaultImportPlaintextBackup(content: string): Promise<VaultImportResult> {
+  return await invoke<VaultImportResult>("vault_import_plaintext_backup", { content });
 }
 
 export async function webdavTestConnection(config: WebDavConfig): Promise<WebDavSyncResult> {

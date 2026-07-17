@@ -30,7 +30,11 @@ import {
   vaultDecryptSecretWithMasterPassword,
   vaultDeleteSecretRecord,
   vaultDeleteSystemDataKey,
+  vaultExportEncryptedBackup,
+  vaultExportPlaintextBackup,
   vaultInitSystemDataKey,
+  vaultImportEncryptedBackup,
+  vaultImportPlaintextBackup,
   vaultListConflictRecords,
   vaultListSecretRecords,
   vaultMigrateSecretToSystemKeychain,
@@ -74,6 +78,26 @@ function readImageFile(file: File): Promise<PendingImage> {
   });
 }
 
+function readTextFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error ?? new Error(`Failed to read ${file.name}`));
+    reader.readAsText(file);
+  });
+}
+
+function downloadJson(filename: string, data: unknown) {
+  const content = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+  const blob = new Blob([content], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 async function saveCredentialWithSystemKeychain(providerId: string, displayName: string, payload: StoredCredentialPayload): Promise<SecretRecordSummary> {
   return await invoke<SecretRecordSummary>("vault_save_secret_with_system_keychain", { providerId, displayName, payload });
 }
@@ -109,6 +133,7 @@ export default function App() {
   const [savedWebdavSummary, setSavedWebdavSummary] = useState<WebDavConfigSummary | null>(null);
   const [syncMessage, setSyncMessage] = useState("");
   const [keychainStatus, setKeychainStatus] = useState<SystemKeychainStatus | null>(null);
+  const [plaintextExportConfirmation, setPlaintextExportConfirmation] = useState("");
   const [appSettings, setAppSettings] = useState<AppSettings>({ providerProxyUrls: {}, providerProxyDisabled: [] });
   const {
     conversationSummaries,
@@ -120,6 +145,8 @@ export default function App() {
   } = useConversations();
   const activeStreamIdRef = useRef<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const encryptedBackupInputRef = useRef<HTMLInputElement | null>(null);
+  const plaintextBackupInputRef = useRef<HTMLInputElement | null>(null);
   const chatMessagesRef = useRef<ChatMessage[]>(initialMessages);
   const currentConversationIdRef = useRef<string | null>(null);
   const activeProviderIdRef = useRef(activeProviderId);
@@ -387,6 +414,53 @@ export default function App() {
     if (!selectedSecretId) return;
     await deleteRecord(selectedSecretId, "Deleted saved key.");
     setSelectedSecretId("");
+  }
+
+  async function handleExportEncryptedBackup() {
+    setBusy(true);
+    try {
+      downloadJson("keysync-encrypted-backup.json", await vaultExportEncryptedBackup());
+      setTestResult(activeProvider ? { ok: true, providerId: activeProvider.id, message: "Encrypted backup exported." } : null);
+    } catch (error) {
+      setTestResult(activeProvider ? { ok: false, providerId: activeProvider.id, message: errorMessage(error) } : null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleExportPlaintextBackup() {
+    if (plaintextExportConfirmation !== "EXPORT") return;
+    setBusy(true);
+    try {
+      const backup = await vaultExportPlaintextBackup(plaintextExportConfirmation, masterPassword);
+      downloadJson("keysync-plaintext-backup.json", backup);
+      setPlaintextExportConfirmation("");
+      setTestResult(activeProvider ? { ok: true, providerId: activeProvider.id, message: "Plaintext backup exported. Store it securely." } : null);
+    } catch (error) {
+      setTestResult(activeProvider ? { ok: false, providerId: activeProvider.id, message: errorMessage(error) } : null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleImportBackup(files: FileList | null, mode: "encrypted" | "plaintext") {
+    const file = files?.item(0);
+    if (!file) return;
+    setBusy(true);
+    try {
+      const content = await readTextFile(file);
+      const result = mode === "encrypted"
+        ? await vaultImportEncryptedBackup(content)
+        : await vaultImportPlaintextBackup(content);
+      await reloadVaultRecords();
+      setTestResult(activeProvider ? { ok: true, providerId: activeProvider.id, message: `Imported ${result.imported} record(s), ${result.conflicts} conflict copy/copies.` } : null);
+    } catch (error) {
+      setTestResult(activeProvider ? { ok: false, providerId: activeProvider.id, message: errorMessage(error) } : null);
+    } finally {
+      setBusy(false);
+      if (encryptedBackupInputRef.current) encryptedBackupInputRef.current.value = "";
+      if (plaintextBackupInputRef.current) plaintextBackupInputRef.current.value = "";
+    }
   }
 
   async function deleteRecord(recordId: string, message: string) {
@@ -759,6 +833,7 @@ export default function App() {
 
       <aside className="inspector">
         <section className="card"><h2><KeyRound size={16} /> API key vault</h2><p>New records are saved with the OS keychain data key. Master password is only needed for older records, migration, or WebDAV config.</p><label>Master password<input type="password" value={masterPassword} onChange={(event) => setMasterPassword(event.target.value)} placeholder="For legacy records / WebDAV config" /></label><label>Saved key<select value={selectedSecretId} onChange={(event) => setSelectedSecretId(event.target.value)}><option value="">Select saved key</option>{providerSecrets.map((secret) => <option key={secret.id} value={secret.id}>{secret.displayName}</option>)}</select></label><div className="button-row"><button onClick={handleListModelsWithSavedKey} disabled={busy || !selectedSecretId}>List saved</button><button className="primary" onClick={handleTestProviderWithSavedKey} disabled={busy || !selectedSecretId}>Test saved</button></div><button className="secondary full" onClick={handleMigrateSavedKey} disabled={busy || !selectedSecretId || !masterPassword}>Migrate legacy key to system keychain</button><button className="danger" onClick={handleDeleteSavedKey} disabled={busy || !selectedSecretId}>Delete saved key</button>{testResult && <p className={testResult.ok ? "ok" : "warn"}>{testResult.message}</p>}</section>
+        <section className="card"><h2>Backup</h2><p>Encrypted backups preserve encrypted records. Plaintext export is intentionally gated and should only be used for migration.</p><input ref={encryptedBackupInputRef} type="file" accept="application/json,.json" hidden onChange={(event) => void handleImportBackup(event.target.files, "encrypted")} /><input ref={plaintextBackupInputRef} type="file" accept="application/json,.json" hidden onChange={(event) => void handleImportBackup(event.target.files, "plaintext")} /><div className="button-row"><button onClick={() => void handleExportEncryptedBackup()} disabled={busy}>Export encrypted</button><button onClick={() => encryptedBackupInputRef.current?.click()} disabled={busy}>Import encrypted</button></div><label>Type EXPORT to allow plaintext export<input value={plaintextExportConfirmation} onChange={(event) => setPlaintextExportConfirmation(event.target.value)} placeholder="EXPORT" /></label><div className="button-row"><button className="danger inline" onClick={() => void handleExportPlaintextBackup()} disabled={busy || plaintextExportConfirmation !== "EXPORT"}>Export plaintext JSON</button><button onClick={() => plaintextBackupInputRef.current?.click()} disabled={busy}>Import plaintext JSON</button></div></section>
         <section className="card"><h2>System keychain</h2><p>Default vault mode uses an OS keychain data key for new local records. The data key cannot be deleted while saved records still depend on it.</p>{keychainStatus && <p className={keychainStatus.available ? "ok" : "warn"}>{keychainStatus.message}</p>}<dl><dt>Service</dt><dd>{keychainStatus?.service ?? "app.keysync.ai"}</dd><dt>Account</dt><dd>{keychainStatus?.account ?? "vault-data-key"}</dd><dt>Data key</dt><dd>{keychainStatus?.hasDataKey ? "Present" : "Missing"}</dd></dl><div className="button-row"><button onClick={reloadSystemKeychainStatus} disabled={busy}>Refresh</button><button className="primary" onClick={handleInitSystemKeychain} disabled={busy}>Init data key</button></div><button className="danger" onClick={handleDeleteSystemKeychain} disabled={busy || !keychainStatus?.hasDataKey}>Delete data key</button></section>
         <section className="card"><h2>Save new key</h2><label>Display name<input value={keyName} onChange={(event) => setKeyName(event.target.value)} placeholder="Personal OpenAI key" /></label><label>API Key<input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-... or provider token" /></label><div className="button-row"><button onClick={handleListModelsWithRawKey} disabled={busy || !apiKey.trim()}>List raw</button><button onClick={handleTestProviderWithRawKey} disabled={busy || !apiKey.trim()}>Test raw</button></div><button className="primary full" onClick={handleSaveKey} disabled={busy || !apiKey.trim()}>Save with system keychain</button><button className="secondary full" onClick={handleSaveKeyWithMasterPassword} disabled={busy || !apiKey.trim() || !masterPassword}>Save with master password</button></section>
         <section className="card"><h2>Proxy</h2><p>Use an HTTP, HTTPS, or SOCKS5 URL. Credentials in the URL are encrypted locally with the system keychain data key.</p><label>Global proxy<input type="password" value={appSettings.globalProxyUrl ?? ""} onChange={(event) => setAppSettings((current) => ({ ...current, globalProxyUrl: event.target.value || undefined }))} placeholder="socks5://user:password@host:1080" /></label>{activeProvider && <><label>{activeProvider.name} override<input type="password" value={appSettings.providerProxyUrls[activeProvider.id] ?? ""} onChange={(event) => setAppSettings((current) => ({ ...current, providerProxyUrls: { ...current.providerProxyUrls, [activeProvider.id]: event.target.value } }))} placeholder="Leave empty to use global proxy" /></label><label className="checkbox-label"><input type="checkbox" checked={appSettings.providerProxyDisabled.includes(activeProvider.id)} onChange={(event) => setAppSettings((current) => ({ ...current, providerProxyDisabled: event.target.checked ? [...new Set([...current.providerProxyDisabled, activeProvider.id])] : current.providerProxyDisabled.filter((providerId) => providerId !== activeProvider.id) }))} />Connect this provider directly</label></>}<p>Active route: {activeProxyUrl ? "custom proxy" : "direct connection"}</p><button className="primary full" onClick={() => void handleSaveProxySettings()} disabled={busy}>Save encrypted proxy settings</button></section>

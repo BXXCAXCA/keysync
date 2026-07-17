@@ -36,6 +36,7 @@ Provider support is organized around a unified adapter approach. Current and pla
 - Added manual WebDAV test, upload, download, saved config, and unlock flows.
 - Added conflict review behavior for remote copies.
 - Added encrypted global/provider proxy settings and wired their resolved URL into all Provider HTTP and streaming clients.
+- Added encrypted backup import/export and confirmation-gated plaintext JSON migration backup flows.
 
 ## Streaming chat
 

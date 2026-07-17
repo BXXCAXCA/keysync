@@ -20,6 +20,8 @@ Implemented:
 - UI status card for system keychain availability and data-key initialization.
 - Guarded system data-key deletion: the backend refuses deletion while any local record uses a system-keychain envelope, preventing accidental permanent loss of saved credentials.
 - Encrypted local application settings for global and provider-specific proxy URLs; deleting the system data key is also refused while these settings exist.
+- Encrypted vault backup export/import with conservative record-level conflict handling.
+- Plaintext JSON export guarded by an explicit `EXPORT` confirmation; plaintext imports are immediately re-encrypted with the system-keychain data key.
 
 Pending:
 
@@ -76,3 +78,4 @@ The UI keeps a secondary "Save with master password" action and falls back to ma
 - Sync files must contain only encrypted envelopes.
 - Plaintext reveal must require system verification or master password unlock.
 - Future clipboard copy should auto-clear after a short timeout.
+- Plaintext backups are an explicit migration-only escape hatch and should be deleted after use.
