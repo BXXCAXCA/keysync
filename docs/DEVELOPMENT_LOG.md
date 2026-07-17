@@ -8,7 +8,7 @@ This file records the implementation history captured from the ChatGPT developme
 - Branch: `main`
 - User continuation command: `继续`
 - Preferred workflow: make small focused commits, document assumptions, avoid repeated confirmation questions when the next step is clear.
-- Verification caveat: local build/check commands have not been run in the ChatGPT environment unless a future log entry explicitly says so.
+- Verification caveat: the frontend build is verified locally; Rust checks remain unverified until a Cargo toolchain is available.
 
 ## Foundation
 
