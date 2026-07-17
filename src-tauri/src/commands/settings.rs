@@ -13,6 +13,7 @@ const LOCAL_SETTINGS_FILE: &str = "settings.local.json";
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(default)]
 pub struct AppSettings {
     pub global_proxy_url: Option<String>,
     pub provider_proxy_urls: BTreeMap<String, String>,
