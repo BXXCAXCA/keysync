@@ -19,6 +19,7 @@ Implemented:
 - Master-password record save/unlock retained for legacy records and optional mode.
 - UI status card for system keychain availability and data-key initialization.
 - Guarded system data-key deletion: the backend refuses deletion while any local record uses a system-keychain envelope, preventing accidental permanent loss of saved credentials.
+- Encrypted local application settings for global and provider-specific proxy URLs; deleting the system data key is also refused while these settings exist.
 
 Pending:
 

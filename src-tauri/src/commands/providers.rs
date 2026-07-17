@@ -136,7 +136,7 @@ fn handle_stream_task_result(window: &tauri::Window, stream_id: &str, result: st
 async fn run_openai_compatible_stream(window: tauri::Window, stream_id: String, config: ProviderConfig, api_key: String, request: UnifiedChatRequest) -> crate::errors::Result<()> {
     emit_stream_event(&window, &stream_id, ChatStreamEvent::Start)?;
 
-    let response = build_client()?
+    let response = build_client(config.proxy_url.as_deref())?
         .post(join_url(&config.base_url, config.chat_path.as_deref().or(Some("/chat/completions"))))
         .bearer_auth(api_key)
         .json(&json!({
@@ -174,7 +174,7 @@ async fn run_openai_responses_stream(window: tauri::Window, stream_id: String, c
         body["instructions"] = json!(system_prompt);
     }
 
-    let response = build_client()?
+    let response = build_client(config.proxy_url.as_deref())?
         .post(join_url(&config.base_url, config.responses_path.as_deref().or(Some("/responses"))))
         .bearer_auth(api_key)
         .json(&body)
@@ -193,7 +193,7 @@ async fn run_openai_responses_stream(window: tauri::Window, stream_id: String, c
 async fn run_gemini_stream(window: tauri::Window, stream_id: String, config: ProviderConfig, api_key: String, request: UnifiedChatRequest) -> crate::errors::Result<()> {
     emit_stream_event(&window, &stream_id, ChatStreamEvent::Start)?;
 
-    let response = build_client()?
+    let response = build_client(config.proxy_url.as_deref())?
         .post(gemini_stream_url(&config, &request.model))
         .header("x-goog-api-key", api_key)
         .json(&json!({
@@ -229,7 +229,7 @@ async fn run_anthropic_stream(window: tauri::Window, stream_id: String, config: 
         body["system"] = json!(system_prompt);
     }
 
-    let response = build_client()?
+    let response = build_client(config.proxy_url.as_deref())?
         .post(join_url(&config.base_url, config.chat_path.as_deref().or(Some("/messages"))))
         .header("x-api-key", api_key)
         .header("anthropic-version", ANTHROPIC_VERSION)

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ChatStartResult,
+  AppSettings,
   ConversationDetail,
   ConversationSummary,
   ModelInfo,
@@ -49,7 +50,7 @@ export async function runProviderTest(providerId: string): Promise<TestResult> {
   }
 }
 
-export function templateToConfig(template: ProviderTemplate): ProviderConfig {
+export function templateToConfig(template: ProviderTemplate, proxyUrl?: string): ProviderConfig {
   return {
     id: template.id,
     name: template.name,
@@ -58,7 +59,16 @@ export function templateToConfig(template: ProviderTemplate): ProviderConfig {
     modelsPath: template.modelsPath,
     chatPath: template.chatPath,
     responsesPath: template.responsesPath,
+    proxyUrl,
   };
+}
+
+export async function loadAppSettings(): Promise<AppSettings> {
+  return await invoke<AppSettings>("load_app_settings");
+}
+
+export async function saveAppSettings(settings: AppSettings): Promise<AppSettings> {
+  return await invoke<AppSettings>("save_app_settings", { settings });
 }
 
 export async function listModelsWithKey(config: ProviderConfig, apiKey: string): Promise<ModelInfo[]> {

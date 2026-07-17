@@ -23,7 +23,7 @@ impl ProviderAdapter for OpenAiResponsesAdapter {
         let selected_model = model.map(str::to_owned).or_else(|| models.first().map(|item| item.id.clone()))
             .ok_or_else(|| KeySyncError::Provider("model list is empty; cannot run minimal Responses request".into()))?;
 
-        let client = build_client()?;
+        let client = build_client(config.proxy_url.as_deref())?;
         let url = join_url(&config.base_url, config.responses_path.as_deref().or(Some("/responses")));
         let response = client
             .post(url)

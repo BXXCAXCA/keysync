@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use rand::RngCore;
 use serde::Serialize;
 use tauri::Manager;
 use uuid::Uuid;
@@ -11,7 +10,6 @@ use crate::vault::{SecretPayload, SecretRecordSummary, VaultFile, VaultService};
 
 const LOCAL_VAULT_FILE: &str = "vault.local.json";
 const LOCAL_DEVICE_ID: &str = "local-device";
-const SYSTEM_DATA_KEY_BYTES: usize = 32;
 
 #[derive(Debug, Serialize)]
 pub struct VaultSecurityProfile {
@@ -81,9 +79,7 @@ pub fn vault_init_system_data_key() -> std::result::Result<SystemKeychainStatus,
         });
     }
 
-    let mut data_key = vec![0_u8; SYSTEM_DATA_KEY_BYTES];
-    rand::thread_rng().fill_bytes(&mut data_key);
-    keychain::save_data_key(&data_key).map_err(ErrorPayload::from)?;
+    keychain::load_or_create_data_key().map_err(ErrorPayload::from)?;
 
     Ok(SystemKeychainStatus {
         available: true,
@@ -98,6 +94,12 @@ pub fn vault_init_system_data_key() -> std::result::Result<SystemKeychainStatus,
 pub fn vault_delete_system_data_key(
     app: tauri::AppHandle,
 ) -> std::result::Result<SystemKeychainStatus, ErrorPayload> {
+    if crate::commands::settings::has_encrypted_local_settings(&app)? {
+        return Err(ErrorPayload::from(KeySyncError::Vault(
+            "cannot delete the system data key while encrypted app settings still exist; clear or migrate those settings first"
+                .into(),
+        )));
+    }
     let path = local_vault_path(&app)?;
     let vault_file = VaultService::new()
         .load_file(&path, LOCAL_DEVICE_ID.to_owned())
@@ -298,16 +300,7 @@ pub fn vault_rename_secret_record(app: tauri::AppHandle, record_id: String, disp
 }
 
 fn load_or_create_system_data_key() -> std::result::Result<Vec<u8>, ErrorPayload> {
-    match keychain::load_data_key() {
-        Ok(secret) if secret.len() == SYSTEM_DATA_KEY_BYTES => Ok(secret),
-        Ok(_) => Err(ErrorPayload::from(KeySyncError::Vault("system keychain data key has invalid length".into()))),
-        Err(_) => {
-            let mut data_key = vec![0_u8; SYSTEM_DATA_KEY_BYTES];
-            rand::thread_rng().fill_bytes(&mut data_key);
-            keychain::save_data_key(&data_key).map_err(ErrorPayload::from)?;
-            Ok(data_key)
-        }
-    }
+    keychain::load_or_create_data_key().map_err(ErrorPayload::from)
 }
 
 fn local_vault_path(app: &tauri::AppHandle) -> std::result::Result<PathBuf, ErrorPayload> {

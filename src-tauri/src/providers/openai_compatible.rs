@@ -24,7 +24,7 @@ impl ProviderAdapter for OpenAiCompatibleAdapter {
     fn kind(&self) -> ProviderKind { ProviderKind::OpenAiCompatible }
 
     async fn list_models(&self, config: &ProviderConfig, api_key: &str) -> Result<Vec<ModelInfo>> {
-        let client = build_client()?;
+        let client = build_client(config.proxy_url.as_deref())?;
         let url = join_url(&config.base_url, config.models_path.as_deref().or(Some("/models")));
         let response = client
             .get(url)
@@ -51,7 +51,7 @@ impl ProviderAdapter for OpenAiCompatibleAdapter {
         let selected_model = model.map(str::to_owned).or_else(|| models.first().map(|item| item.id.clone()));
         let selected_model = selected_model.ok_or_else(|| KeySyncError::Provider("model list is empty; cannot run minimal request".into()))?;
 
-        let client = build_client()?;
+        let client = build_client(config.proxy_url.as_deref())?;
         let url = join_url(&config.base_url, config.chat_path.as_deref().or(Some("/chat/completions")));
         let response = client
             .post(url)

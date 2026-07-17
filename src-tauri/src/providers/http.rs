@@ -27,9 +27,14 @@ pub fn redact_sensitive_text(input: &str) -> String {
         .replace("apikey", "apikey_redacted")
 }
 
-pub fn build_client() -> Result<reqwest::Client> {
-    reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(45))
+pub fn build_client(proxy_url: Option<&str>) -> Result<reqwest::Client> {
+    let mut builder = reqwest::Client::builder().timeout(std::time::Duration::from_secs(45));
+    if let Some(proxy_url) = proxy_url.filter(|value| !value.trim().is_empty()) {
+        let proxy = reqwest::Proxy::all(proxy_url)
+            .map_err(|err| KeySyncError::Network(format!("invalid proxy URL: {err}")))?;
+        builder = builder.proxy(proxy);
+    }
+    builder
         .build()
         .map_err(|err| KeySyncError::Network(format!("failed to build HTTP client: {err}")))
 }

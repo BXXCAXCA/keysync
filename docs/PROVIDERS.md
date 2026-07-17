@@ -55,8 +55,13 @@ Anthropic now supports:
 
 Anthropic does not currently use a remote model listing endpoint in this MVP.
 
+## Proxy routing
+
+Provider requests now accept a resolved proxy URL. The shared HTTP client applies it to model listing, key testing, ordinary provider requests, and all streaming paths. HTTP, HTTPS, and SOCKS5 URLs are enabled.
+
+The frontend resolves a provider-specific URL first and otherwise falls back to the encrypted global proxy setting. A provider can also explicitly bypass the global proxy. Proxy URLs, including URL-embedded credentials, are stored in encrypted local settings protected by the system keychain data key.
+
 ## Pending
 
-- Provider-specific proxy plumbing in the shared HTTP client.
 - Richer multimodal request mapping for Gemini and Anthropic.
 - Response-stream parser hardening with provider fixture tests.

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { KeyRound, MessageSquareText, RefreshCw, Server, ShieldCheck, UploadCloud } from "lucide-react";
-import type { ModelInfo, ProviderTemplate, SecretRecordSummary, SystemKeychainStatus, TestResult, UnifiedMessage, WebDavConfig, WebDavConfigSummary } from "./types";
+import type { AppSettings, ModelInfo, ProviderTemplate, SecretRecordSummary, SystemKeychainStatus, TestResult, UnifiedMessage, WebDavConfig, WebDavConfigSummary } from "./types";
 import type { ChatMessage } from "./lib/chat";
 import {
   appendAssistantDelta,
@@ -16,12 +16,14 @@ import { useConversations } from "./hooks/useConversations";
 import { WebDavSyncCard } from "./components/WebDavSyncCard";
 import {
   getAppStatus,
+  loadAppSettings,
   listCachedModels,
   listModelsWithKey,
   loadProviderTemplates,
   startChatStreamWithKey,
   stopChatStream,
   saveModelCache,
+  saveAppSettings,
   templateToConfig,
   testProviderWithKey,
   updateModelPreferences,
@@ -107,6 +109,7 @@ export default function App() {
   const [savedWebdavSummary, setSavedWebdavSummary] = useState<WebDavConfigSummary | null>(null);
   const [syncMessage, setSyncMessage] = useState("");
   const [keychainStatus, setKeychainStatus] = useState<SystemKeychainStatus | null>(null);
+  const [appSettings, setAppSettings] = useState<AppSettings>({ providerProxyUrls: {}, providerProxyDisabled: [] });
   const {
     conversationSummaries,
     currentConversationId,
@@ -157,6 +160,7 @@ export default function App() {
     reloadVaultRecords();
     reloadSavedWebDavSummary();
     reloadSystemKeychainStatus();
+    loadAppSettings().then(setAppSettings).catch(() => setAppSettings({ providerProxyUrls: {}, providerProxyDisabled: [] }));
   }, []);
 
   const activeProvider = useMemo(
@@ -173,6 +177,12 @@ export default function App() {
     () => models.find((model) => model.id === selectedModel),
     [models, selectedModel]
   );
+
+  const activeProxyUrl = activeProvider
+    ? appSettings.providerProxyDisabled.includes(activeProvider.id)
+      ? undefined
+      : appSettings.providerProxyUrls[activeProvider.id] || appSettings.globalProxyUrl
+    : undefined;
 
   useEffect(() => {
     let cancelled = false;
@@ -456,7 +466,7 @@ export default function App() {
     setBusy(true);
 
     try {
-      const result = await startChatStreamWithKey(templateToConfig(activeProvider), secret.apiKey, {
+      const result = await startChatStreamWithKey(providerConfig(activeProvider), secret.apiKey, {
         model: selectedModel,
         stream: true,
         temperature: parsedTemperature,
@@ -604,7 +614,7 @@ export default function App() {
     setBusy(true);
     setTestResult(null);
     try {
-      const result = await listModelsWithKey(templateToConfig(activeProvider), unlockedApiKey);
+      const result = await listModelsWithKey(providerConfig(activeProvider), unlockedApiKey);
       const cachedModels = await saveModelCache(activeProvider.id, result);
       setModels(cachedModels);
       setSelectedModel(cachedModels.find((model) => !model.isHidden)?.id ?? cachedModels[0]?.id ?? "");
@@ -621,12 +631,29 @@ export default function App() {
     setBusy(true);
     setTestResult(null);
     try {
-      const result = await testProviderWithKey(templateToConfig(activeProvider), unlockedApiKey, selectedModel || undefined);
+      const result = await testProviderWithKey(providerConfig(activeProvider), unlockedApiKey, selectedModel || undefined);
       setTestResult(result);
     } catch (error) {
       setTestResult({ ok: false, providerId: activeProvider.id, message: errorMessage(error) });
     } finally {
       setBusy(false);
+    }
+  }
+
+  function providerConfig(provider: ProviderTemplate) {
+    const proxyUrl = appSettings.providerProxyDisabled.includes(provider.id)
+      ? undefined
+      : appSettings.providerProxyUrls[provider.id] || appSettings.globalProxyUrl;
+    return templateToConfig(provider, proxyUrl);
+  }
+
+  async function handleSaveProxySettings() {
+    try {
+      const saved = await saveAppSettings(appSettings);
+      setAppSettings(saved);
+      setSyncMessage("Proxy settings saved with the system keychain data key.");
+    } catch (error) {
+      setSyncMessage(`Proxy settings failed: ${errorMessage(error)}`);
     }
   }
 
@@ -734,6 +761,7 @@ export default function App() {
         <section className="card"><h2><KeyRound size={16} /> API key vault</h2><p>New records are saved with the OS keychain data key. Master password is only needed for older records, migration, or WebDAV config.</p><label>Master password<input type="password" value={masterPassword} onChange={(event) => setMasterPassword(event.target.value)} placeholder="For legacy records / WebDAV config" /></label><label>Saved key<select value={selectedSecretId} onChange={(event) => setSelectedSecretId(event.target.value)}><option value="">Select saved key</option>{providerSecrets.map((secret) => <option key={secret.id} value={secret.id}>{secret.displayName}</option>)}</select></label><div className="button-row"><button onClick={handleListModelsWithSavedKey} disabled={busy || !selectedSecretId}>List saved</button><button className="primary" onClick={handleTestProviderWithSavedKey} disabled={busy || !selectedSecretId}>Test saved</button></div><button className="secondary full" onClick={handleMigrateSavedKey} disabled={busy || !selectedSecretId || !masterPassword}>Migrate legacy key to system keychain</button><button className="danger" onClick={handleDeleteSavedKey} disabled={busy || !selectedSecretId}>Delete saved key</button>{testResult && <p className={testResult.ok ? "ok" : "warn"}>{testResult.message}</p>}</section>
         <section className="card"><h2>System keychain</h2><p>Default vault mode uses an OS keychain data key for new local records. The data key cannot be deleted while saved records still depend on it.</p>{keychainStatus && <p className={keychainStatus.available ? "ok" : "warn"}>{keychainStatus.message}</p>}<dl><dt>Service</dt><dd>{keychainStatus?.service ?? "app.keysync.ai"}</dd><dt>Account</dt><dd>{keychainStatus?.account ?? "vault-data-key"}</dd><dt>Data key</dt><dd>{keychainStatus?.hasDataKey ? "Present" : "Missing"}</dd></dl><div className="button-row"><button onClick={reloadSystemKeychainStatus} disabled={busy}>Refresh</button><button className="primary" onClick={handleInitSystemKeychain} disabled={busy}>Init data key</button></div><button className="danger" onClick={handleDeleteSystemKeychain} disabled={busy || !keychainStatus?.hasDataKey}>Delete data key</button></section>
         <section className="card"><h2>Save new key</h2><label>Display name<input value={keyName} onChange={(event) => setKeyName(event.target.value)} placeholder="Personal OpenAI key" /></label><label>API Key<input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-... or provider token" /></label><div className="button-row"><button onClick={handleListModelsWithRawKey} disabled={busy || !apiKey.trim()}>List raw</button><button onClick={handleTestProviderWithRawKey} disabled={busy || !apiKey.trim()}>Test raw</button></div><button className="primary full" onClick={handleSaveKey} disabled={busy || !apiKey.trim()}>Save with system keychain</button><button className="secondary full" onClick={handleSaveKeyWithMasterPassword} disabled={busy || !apiKey.trim() || !masterPassword}>Save with master password</button></section>
+        <section className="card"><h2>Proxy</h2><p>Use an HTTP, HTTPS, or SOCKS5 URL. Credentials in the URL are encrypted locally with the system keychain data key.</p><label>Global proxy<input type="password" value={appSettings.globalProxyUrl ?? ""} onChange={(event) => setAppSettings((current) => ({ ...current, globalProxyUrl: event.target.value || undefined }))} placeholder="socks5://user:password@host:1080" /></label>{activeProvider && <><label>{activeProvider.name} override<input type="password" value={appSettings.providerProxyUrls[activeProvider.id] ?? ""} onChange={(event) => setAppSettings((current) => ({ ...current, providerProxyUrls: { ...current.providerProxyUrls, [activeProvider.id]: event.target.value } }))} placeholder="Leave empty to use global proxy" /></label><label className="checkbox-label"><input type="checkbox" checked={appSettings.providerProxyDisabled.includes(activeProvider.id)} onChange={(event) => setAppSettings((current) => ({ ...current, providerProxyDisabled: event.target.checked ? [...new Set([...current.providerProxyDisabled, activeProvider.id])] : current.providerProxyDisabled.filter((providerId) => providerId !== activeProvider.id) }))} />Connect this provider directly</label></>}<p>Active route: {activeProxyUrl ? "custom proxy" : "direct connection"}</p><button className="primary full" onClick={() => void handleSaveProxySettings()} disabled={busy}>Save encrypted proxy settings</button></section>
         <WebDavSyncCard
           busy={busy}
           masterPassword={masterPassword}

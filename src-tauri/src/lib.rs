@@ -23,6 +23,8 @@ pub fn run() {
             commands::models::save_model_cache,
             commands::models::list_cached_models,
             commands::models::update_model_preferences,
+            commands::settings::load_app_settings,
+            commands::settings::save_app_settings,
             commands::vault::vault_security_profile,
             commands::vault::vault_system_keychain_status,
             commands::vault::vault_init_system_data_key,

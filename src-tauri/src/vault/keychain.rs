@@ -1,4 +1,5 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+use rand::RngCore;
 
 use crate::errors::{KeySyncError, Result};
 
@@ -57,4 +58,19 @@ pub fn load_data_key() -> Result<Vec<u8>> {
 
 pub fn delete_data_key() -> Result<()> {
     system_backend().delete_secret(KEYCHAIN_SERVICE, DATA_KEY_ACCOUNT)
+}
+
+pub fn load_or_create_data_key() -> Result<Vec<u8>> {
+    match load_data_key() {
+        Ok(secret) if secret.len() == 32 => Ok(secret),
+        Ok(_) => Err(KeySyncError::Vault(
+            "system keychain data key has invalid length".into(),
+        )),
+        Err(_) => {
+            let mut data_key = vec![0_u8; 32];
+            rand::thread_rng().fill_bytes(&mut data_key);
+            save_data_key(&data_key)?;
+            Ok(data_key)
+        }
+    }
 }

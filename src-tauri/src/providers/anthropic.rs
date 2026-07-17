@@ -44,7 +44,7 @@ impl ProviderAdapter for AnthropicAdapter {
             .or_else(|| models.first().map(|item| item.id.clone()))
             .ok_or_else(|| KeySyncError::Provider("Claude model list is empty; cannot run minimal request".into()))?;
 
-        let response = build_client()?
+        let response = build_client(config.proxy_url.as_deref())?
             .post(join_url(&config.base_url, config.chat_path.as_deref().or(Some("/messages"))))
             .header("x-api-key", api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)

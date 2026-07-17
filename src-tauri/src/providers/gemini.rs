@@ -29,7 +29,7 @@ impl ProviderAdapter for GeminiAdapter {
     fn kind(&self) -> ProviderKind { ProviderKind::GoogleGemini }
 
     async fn list_models(&self, config: &ProviderConfig, api_key: &str) -> Result<Vec<ModelInfo>> {
-        let client = build_client()?;
+        let client = build_client(config.proxy_url.as_deref())?;
         let url = join_url(&config.base_url, config.models_path.as_deref().or(Some("/models")));
         let response = client
             .get(url)
@@ -59,7 +59,7 @@ impl ProviderAdapter for GeminiAdapter {
             .or_else(|| models.first().map(|item| item.id.clone()))
             .ok_or_else(|| KeySyncError::Provider("Gemini model list is empty; cannot run minimal request".into()))?;
 
-        let response = build_client()?
+        let response = build_client(config.proxy_url.as_deref())?
             .post(gemini_generate_url(config, &selected_model))
             .header("x-goog-api-key", api_key)
             .json(&json!({

@@ -61,6 +61,7 @@ pub struct ProviderConfig {
     pub chat_path: Option<String>,
     pub responses_path: Option<String>,
     pub proxy_id: Option<String>,
+    pub proxy_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

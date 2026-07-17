@@ -28,6 +28,13 @@ export interface ProviderConfig {
   chatPath?: string;
   responsesPath?: string;
   proxyId?: string;
+  proxyUrl?: string;
+}
+
+export interface AppSettings {
+  globalProxyUrl?: string;
+  providerProxyUrls: Record<string, string>;
+  providerProxyDisabled: string[];
 }
 
 export interface ModelInfo {
