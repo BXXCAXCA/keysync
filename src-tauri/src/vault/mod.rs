@@ -16,7 +16,7 @@ pub enum VaultMode {
     MasterPassword,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SecretPayload {
     pub api_key: String,

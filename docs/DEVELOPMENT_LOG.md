@@ -122,8 +122,7 @@ Previous workflow/status checks through the available connector returned no usef
 ## Current next-step queue
 
 1. Verify Rust build, formatting, and Clippy when a local toolchain or actionable CI log is available.
-2. Implement a master-password-protected cross-device transfer format for keychain-encrypted records before calling WebDAV sync multi-device ready.
-3. Sync encrypted settings/model preferences with revision and device metadata.
-4. Add optional encrypted conversation-history sync after the transfer format is complete.
-5. Add clipboard auto-clear and optional OS verification before exposing plaintext credentials.
-6. Extract `useWebDavSync` and remaining inspector components from `App.tsx`.
+2. Sync encrypted settings/model preferences with revision and device metadata.
+3. Add optional encrypted conversation-history sync after the transfer format is complete.
+4. Add clipboard auto-clear and optional OS verification before exposing plaintext credentials.
+5. Extract `useWebDavSync` and remaining inspector components from `App.tsx`.

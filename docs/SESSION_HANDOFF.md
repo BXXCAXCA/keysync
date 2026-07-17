@@ -227,18 +227,17 @@ Verified locally on 2026-07-18: `npm run build` passed after installing the fron
 - Conflict review card is still inline in `App.tsx`.
 - Provider/model/model-params cards are still inline in `App.tsx`.
 - Conversation WebDAV sync is not implemented; WebDAV currently syncs encrypted vault data, not chat history, model preferences, or proxy settings.
-- System-keychain-encrypted records cannot be decrypted on a different device after raw WebDAV sync; cross-device sync needs a master-password-protected transfer format.
+- Raw WebDAV upload/download remains single-device recovery only. Saved-profile sync now uses a master-password-protected transfer format and re-seals records with the receiving device's system keychain.
 - Rust compile/format/Clippy remain unverified locally.
 - `initialMessages` array is reused; cloning initial messages may be safer for future mutation-heavy changes.
 
 ## Suggested next tasks
 
 1. Verify Rust with `cargo check --manifest-path src-tauri/Cargo.toml` when the toolchain is available.
-2. Implement a master-password-protected cross-device transfer format for system-keychain records, then make WebDAV upload/download use it.
-3. Add settings/model preference WebDAV sync with ETag/revision/device metadata.
-4. Add optional conversation-history sync only after the encrypted transfer model is complete.
-5. Add clipboard auto-clear and optional OS verification before exposing plaintext credentials.
-6. Extract `useWebDavSync`, vault/keychain, conflict, provider, and model inspector components from `App.tsx`.
+2. Add settings/model preference WebDAV sync with ETag/revision/device metadata.
+3. Add optional conversation-history sync only after the encrypted transfer model is complete.
+4. Add clipboard auto-clear and optional OS verification before exposing plaintext credentials.
+5. Extract `useWebDavSync`, vault/keychain, conflict, provider, and model inspector components from `App.tsx`.
 
 ## Resume instruction for future agents
 

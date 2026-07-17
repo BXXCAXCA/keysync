@@ -8,8 +8,8 @@ Implemented:
 
 - WebDAV connection test using `PROPFIND` with `Depth: 0`.
 - Remote directory creation using `MKCOL` before upload.
-- Upload of the local encrypted vault file to `vault.sync.json.enc`.
-- Download of `vault.sync.json.enc` into the local app data vault file.
+- Raw upload/download of the local encrypted vault file for single-device recovery.
+- Cross-device upload/download through saved WebDAV configuration: records are re-encrypted with the WebDAV master password for transport, then re-encrypted with the receiving device's system-keychain data key.
 - Local vault backup before overwrite or merge.
 - Record-level merge by secret record ID.
 - Conflict copies for records with the same ID but different encrypted payload or metadata.
@@ -85,3 +85,5 @@ The summary command returns endpoint, username, remote directory, and whether a 
 ## Safety model
 
 The synced vault file contains encrypted payloads only. Plaintext API keys are not written to the WebDAV file. WebDAV passwords are saved locally only as encrypted vault envelopes. Download merge keeps conflict copies instead of deleting or silently overwriting data.
+
+For actual multi-device use, select **Upload saved** / **Merge download saved** after saving the WebDAV profile with a master password. This path creates a transfer envelope whose records are protected by that master password; the original system-keychain encryption is never copied to another device. The receiver decrypts each transfer record with the master password and immediately seals it with its local system data key.
