@@ -221,7 +221,6 @@ Important limitation: no local build or cargo command has been run in the curren
 - Previous image turns are displayed as text markers and are not restored as real image attachments in loaded conversations.
 - Conversation WebDAV sync is not implemented; WebDAV currently syncs encrypted vault/config data, not chat history.
 - Message ordering relies on SQLite `rowid` rather than an explicit sequence column.
-- `handleLoadConversation` still uses `setTimeout` to restore selected model after provider change. This works but should be replaced with a cleaner loading-conversation guard.
 - `initialMessages` array is reused; cloning initial messages may be safer for future mutation-heavy changes.
 
 ## Suggested next tasks
@@ -233,10 +232,9 @@ Important limitation: no local build or cargo command has been run in the curren
 5. Extract API key vault and system keychain cards into components.
 6. Extract conflict review card.
 7. Extract provider/model/model-params cards.
-8. Improve conversation loading to avoid `setTimeout` for model restore.
-9. Add persisted image attachment restore support.
-10. Add explicit message ordering column/migration.
-11. Consider adding a lockfile and switch CI frontend install to `npm ci` after lockfile is committed.
+8. Add provider-specific proxy configuration and persistence.
+9. Add encrypted backup/import-export and clipboard protection.
+10. Add settings/model preference WebDAV sync with revision metadata.
 
 ## Resume instruction for future agents
 

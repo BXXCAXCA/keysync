@@ -18,6 +18,7 @@ Implemented:
 - New local vault records encrypted with the system-keychain data key by default.
 - Master-password record save/unlock retained for legacy records and optional mode.
 - UI status card for system keychain availability and data-key initialization.
+- Guarded system data-key deletion: the backend refuses deletion while any local record uses a system-keychain envelope, preventing accidental permanent loss of saved credentials.
 
 Pending:
 

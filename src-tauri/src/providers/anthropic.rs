@@ -31,6 +31,7 @@ impl ProviderAdapter for AnthropicAdapter {
                 is_favorite: false,
                 is_hidden: false,
                 alias: None,
+                default_params: None,
             })
             .collect())
     }

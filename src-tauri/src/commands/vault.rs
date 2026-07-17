@@ -95,7 +95,31 @@ pub fn vault_init_system_data_key() -> std::result::Result<SystemKeychainStatus,
 }
 
 #[tauri::command]
-pub fn vault_delete_system_data_key() -> std::result::Result<SystemKeychainStatus, ErrorPayload> {
+pub fn vault_delete_system_data_key(
+    app: tauri::AppHandle,
+) -> std::result::Result<SystemKeychainStatus, ErrorPayload> {
+    let path = local_vault_path(&app)?;
+    let vault_file = VaultService::new()
+        .load_file(&path, LOCAL_DEVICE_ID.to_owned())
+        .map_err(ErrorPayload::from)?;
+    let protected_records = vault_file
+        .records
+        .iter()
+        .filter(|record| {
+            crate::vault::crypto::envelope_from_string(&record.encrypted_payload)
+                .map(|envelope| envelope.kdf.is_none())
+                // An unreadable envelope must be treated conservatively: deleting the
+                // data key could otherwise make a recoverable record unrecoverable.
+                .unwrap_or(true)
+        })
+        .count();
+
+    if protected_records > 0 {
+        return Err(ErrorPayload::from(KeySyncError::Vault(format!(
+            "cannot delete the system data key while {protected_records} local record(s) still depend on it; delete or migrate those records first"
+        ))));
+    }
+
     keychain::delete_data_key().map_err(ErrorPayload::from)?;
     Ok(SystemKeychainStatus {
         available: true,
@@ -196,6 +220,49 @@ pub fn vault_decrypt_secret_with_system_keychain(app: tauri::AppHandle, record_i
         .find(|record| record.id == record_uuid)
         .ok_or_else(|| ErrorPayload::from(KeySyncError::Vault("secret record not found".into())))?;
     service.decrypt_secret_record_with_data_key(record, &data_key).map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub fn vault_migrate_secret_to_system_keychain(
+    app: tauri::AppHandle,
+    record_id: String,
+    master_password: String,
+) -> std::result::Result<SecretRecordSummary, ErrorPayload> {
+    if master_password.is_empty() {
+        return Err(ErrorPayload::from(KeySyncError::Vault(
+            "master password is required to migrate a legacy record".into(),
+        )));
+    }
+
+    let path = local_vault_path(&app)?;
+    let service = VaultService::new();
+    let mut vault_file = service
+        .load_file(&path, LOCAL_DEVICE_ID.to_owned())
+        .map_err(ErrorPayload::from)?;
+    let record_uuid = parse_record_id(&record_id)?;
+    let legacy_record = vault_file
+        .records
+        .iter()
+        .find(|record| record.id == record_uuid)
+        .cloned()
+        .ok_or_else(|| ErrorPayload::from(KeySyncError::Vault("secret record not found".into())))?;
+    let payload = service
+        .decrypt_secret_record_with_master_password(&legacy_record, &master_password)
+        .map_err(ErrorPayload::from)?;
+    let data_key = load_or_create_system_data_key()?;
+    let mut migrated = service
+        .create_secret_record_with_data_key(
+            legacy_record.provider_id,
+            legacy_record.display_name,
+            payload,
+            &data_key,
+        )
+        .map_err(ErrorPayload::from)?;
+    migrated.id = record_uuid;
+    migrated.updated_at = chrono::Utc::now();
+    crate::vault::store::upsert_record(&mut vault_file, migrated.clone());
+    service.save_file(&path, &vault_file).map_err(ErrorPayload::from)?;
+    Ok(SecretRecordSummary::from(&migrated))
 }
 
 #[tauri::command]

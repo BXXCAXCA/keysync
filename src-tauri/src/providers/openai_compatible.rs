@@ -111,5 +111,6 @@ pub fn model_info_from_id(provider_id: &str, id: String) -> ModelInfo {
         is_favorite: false,
         is_hidden: false,
         alias: None,
+        default_params: None,
     }
 }

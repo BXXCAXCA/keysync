@@ -126,6 +126,7 @@ fn gemini_model_info(provider_id: &str, model: GeminiModel) -> ModelInfo {
         is_favorite: false,
         is_hidden: false,
         alias: None,
+        default_params: None,
     }
 }
 

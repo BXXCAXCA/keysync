@@ -19,6 +19,8 @@ The current migration includes:
 - `messages`
 - `sync_state`
 
+Fetched models are cached in `model_cache`. Refreshing a provider updates provider metadata while preserving local preferences: favorite status, hidden status, alias, and default model parameters.
+
 ## Conversation commands
 
 The Tauri command layer exposes:
@@ -28,7 +30,7 @@ The Tauri command layer exposes:
 - `save_conversation(input)`
 - `delete_conversation(conversationId)`
 
-`save_conversation` upserts the conversation row and replaces the stored message rows for that conversation. Message order is loaded by SQLite insertion order (`rowid ASC`).
+`save_conversation` upserts the conversation row and replaces the stored message rows for that conversation. Message order is persisted explicitly through the `messages.sequence` column and loaded by `sequence ASC`. `rowid` is only a compatibility tie-breaker for records created before the sequence migration.
 
 ## Frontend behavior
 
@@ -50,11 +52,10 @@ The current system prompt and model params are saved with the conversation metad
 - max output tokens
 - context length
 
-Messages are currently stored as text-only snapshots. Image attachments are sent to providers on the active turn, but loaded historical messages do not yet restore image payloads into the chat view.
+Message attachments are stored in `attachments_json`. Loaded image attachments are restored into the chat view and included again when retained history is sent to a provider.
 
 ## Current limitations
 
 - There is no full-text search yet.
 - Message rows are replaced on every save instead of appended incrementally.
-- Image payloads are not restored into historical chat messages yet.
 - Conversation sync over WebDAV is not implemented yet; only API key vault sync exists.

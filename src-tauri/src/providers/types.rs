@@ -74,6 +74,7 @@ pub struct ModelInfo {
     pub is_favorite: bool,
     pub is_hidden: bool,
     pub alias: Option<String>,
+    pub default_params: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

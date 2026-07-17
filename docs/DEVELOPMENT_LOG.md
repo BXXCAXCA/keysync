@@ -54,6 +54,7 @@ Provider support is organized around a unified adapter approach. Current and pla
 - Added system prompt, temperature, max output tokens, and context length controls.
 - Added lightweight frontend context trimming.
 - Added shared chat helpers in `src/lib/chat.ts`.
+- Added SQLite-backed model caching and preferences: favorites, hide/show, aliases, and saved default parameters.
 
 ## Conversation persistence
 
@@ -63,6 +64,9 @@ Provider support is organized around a unified adapter approach. Current and pla
 - Conversations auto-save after stream completion, stream error, stop, and failed stream start.
 - Wrapped conversation saves in a SQLite transaction to avoid partial writes.
 - Moved frontend conversation state and persistence into `src/hooks/useConversations.ts`.
+- Added an explicit SQLite `messages.sequence` migration so message ordering no longer relies on insertion `rowid` alone.
+- Restored persisted image attachments into loaded conversations, the message UI, and subsequent provider context.
+- Removed the delayed `setTimeout` model restore during conversation loading; the selected model is now set before switching provider state.
 
 ## Frontend extraction progress
 
@@ -101,9 +105,12 @@ Still inline in `src/App.tsx`:
 
 ## Verification status
 
-As of this log entry, do not claim any of the following have passed unless a future entry records an actual run:
+Verified locally on 2026-07-18:
 
-- `npm run build`
+- `npm run build` — passed (`tsc && vite build`).
+
+Still unverified because this environment has no Rust/Cargo toolchain:
+
 - `cargo check --manifest-path src-tauri/Cargo.toml`
 - `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`
 - `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings`

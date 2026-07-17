@@ -17,7 +17,7 @@ Concurrent runs for the same ref are cancelled so only the latest run keeps exec
 The frontend job uses Node.js 20 and runs:
 
 ```bash
-npm install --no-audit --no-fund
+npm ci --no-audit --no-fund
 npm run build
 ```
 
@@ -29,7 +29,7 @@ tsc && vite build
 
 This validates TypeScript strict-mode compilation and Vite production bundling.
 
-The workflow intentionally uses `npm install` instead of `npm ci` because the repository currently does not include a committed `package-lock.json`. Once a lockfile is committed, change the job to `npm ci` and re-enable `actions/setup-node` dependency caching for reproducible installs.
+The repository includes a committed `package-lock.json`, so CI uses `npm ci` for reproducible installs. Node dependency caching can be added later if CI duration becomes a concern.
 
 ## Rust cargo check
 
@@ -59,7 +59,7 @@ Cargo dependency caching is enabled with `Swatinem/rust-cache` for the `src-taur
 Use the same commands as CI:
 
 ```bash
-npm install --no-audit --no-fund
+npm ci --no-audit --no-fund
 npm run build
 cargo check --manifest-path src-tauri/Cargo.toml
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check

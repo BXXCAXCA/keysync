@@ -40,32 +40,33 @@ export function useChatStreamEvents(args: UseChatStreamEventsArgs) {
         setTestResult,
       } = argsRef.current;
       const payload = event.payload;
+      const streamEvent = payload.event;
 
       if (payload.streamId !== activeStreamIdRef.current) return;
 
-      if (payload.event.type === "start") {
+      if (streamEvent.type === "start") {
         setBusy(true);
         return;
       }
 
-      if (payload.event.type === "delta") {
-        updateChatMessages((messages) => appendAssistantDelta(messages, payload.event.text));
+      if (streamEvent.type === "delta") {
+        updateChatMessages((messages) => appendAssistantDelta(messages, streamEvent.text));
         return;
       }
 
-      if (payload.event.type === "usage") {
+      if (streamEvent.type === "usage") {
         setTestResult((current) => ({
           ok: true,
           providerId: current?.providerId ?? activeProviderIdRef.current,
-          message: `Usage: input ${payload.event.inputTokens ?? "?"}, output ${payload.event.outputTokens ?? "?"}`,
+          message: `Usage: input ${streamEvent.inputTokens ?? "?"}, output ${streamEvent.outputTokens ?? "?"}`,
         }));
         return;
       }
 
-      if (payload.event.type === "error") {
+      if (streamEvent.type === "error") {
         updateChatMessages((messages) => [
           ...messages,
-          { role: "assistant", content: `Stream error: ${payload.event.message}` },
+          { role: "assistant", content: `Stream error: ${streamEvent.message}` },
         ]);
         setBusy(false);
         activeStreamIdRef.current = null;
@@ -74,7 +75,7 @@ export function useChatStreamEvents(args: UseChatStreamEventsArgs) {
         return;
       }
 
-      if (payload.event.type === "done") {
+      if (streamEvent.type === "done") {
         setBusy(false);
         activeStreamIdRef.current = null;
         setCurrentStreamId(null);

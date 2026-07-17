@@ -15,7 +15,7 @@ KeySync AI is a local-first cross-platform desktop client for managing LLM provi
 ## Development
 
 ```bash
-npm install
+npm ci
 npm run build
 npm run tauri dev
 ```
@@ -58,6 +58,7 @@ See `docs/CI.md` for local reproduction commands and first-failure triage notes.
 - Stop generation for active chat streams.
 - Image input mapping for OpenAI Chat/Responses, Gemini, and Anthropic request formats.
 - Model parameters wired into chat requests with lightweight frontend context trimming.
+- SQLite-backed model cache with favorite, hide, alias, and per-model default parameter preferences.
 - Local SQLite conversation persistence with sidebar conversation list.
 - Shared chat helper module for message typing, ID generation, parameter parsing, and context trimming.
 - Real vault encryption envelope using XChaCha20-Poly1305 and Argon2id where needed.

@@ -38,7 +38,7 @@ function persistableMessages(messages: ChatMessage[]): ChatMessage[] {
   return messages
     .filter((message) => message.role !== "system")
     .filter((message) => !(message.role === "assistant" && message.content === initialMessages[1].content))
-    .filter((message) => message.content.trim());
+    .filter((message) => message.content.trim() || (message.images?.length ?? 0) > 0);
 }
 
 function messagesWithSystemPrompt(detail: ConversationDetail): ChatMessage[] {
@@ -47,6 +47,7 @@ function messagesWithSystemPrompt(detail: ConversationDetail): ChatMessage[] {
     ...detail.messages.map((message) => ({
       role: normalizeChatRole(message.role),
       content: message.content,
+      images: message.attachments,
     })),
   ];
 }
@@ -88,7 +89,7 @@ export function useConversations() {
       messages: persistedMessages.map((message) => ({
         role: message.role,
         content: message.content,
-        attachments: [],
+        attachments: message.images ?? [],
       })),
     });
 

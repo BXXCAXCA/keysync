@@ -38,9 +38,28 @@ impl StorageService {
     }
 
     pub fn migrate(&self) -> Result<()> {
-        self.connection
-            .execute_batch(include_str!("../../migrations/0001_init.sql"))
-            .map_err(|err| KeySyncError::Storage(format!("run migrations: {err}")))?;
+        let version: i64 = self
+            .connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .map_err(|err| KeySyncError::Storage(format!("read sqlite schema version: {err}")))?;
+
+        if version < 1 {
+            self.connection
+                .execute_batch(include_str!("../../migrations/0001_init.sql"))
+                .map_err(|err| KeySyncError::Storage(format!("run initial migration: {err}")))?;
+            self.connection
+                .execute_batch("PRAGMA user_version = 1")
+                .map_err(|err| KeySyncError::Storage(format!("record initial migration: {err}")))?;
+        }
+
+        if version < 2 {
+            self.connection
+                .execute_batch(include_str!("../../migrations/0002_message_sequence.sql"))
+                .map_err(|err| KeySyncError::Storage(format!("add message sequence migration: {err}")))?;
+            self.connection
+                .execute_batch("PRAGMA user_version = 2")
+                .map_err(|err| KeySyncError::Storage(format!("record message sequence migration: {err}")))?;
+        }
         Ok(())
     }
 }

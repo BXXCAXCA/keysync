@@ -16,18 +16,22 @@ import { useConversations } from "./hooks/useConversations";
 import { WebDavSyncCard } from "./components/WebDavSyncCard";
 import {
   getAppStatus,
+  listCachedModels,
   listModelsWithKey,
   loadProviderTemplates,
   startChatStreamWithKey,
   stopChatStream,
+  saveModelCache,
   templateToConfig,
   testProviderWithKey,
+  updateModelPreferences,
   vaultDecryptSecretWithMasterPassword,
   vaultDeleteSecretRecord,
   vaultDeleteSystemDataKey,
   vaultInitSystemDataKey,
   vaultListConflictRecords,
   vaultListSecretRecords,
+  vaultMigrateSecretToSystemKeychain,
   vaultRenameSecretRecord,
   vaultSaveSecretWithMasterPassword,
   vaultSystemKeychainStatus,
@@ -89,6 +93,7 @@ export default function App() {
   const [selectedSecretId, setSelectedSecretId] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
   const [models, setModels] = useState<ModelInfo[]>([]);
+  const [modelAlias, setModelAlias] = useState("");
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [chatInput, setChatInput] = useState("");
@@ -164,14 +169,37 @@ export default function App() {
     [savedSecrets, activeProviderId]
   );
 
+  const selectedModelInfo = useMemo(
+    () => models.find((model) => model.id === selectedModel),
+    [models, selectedModel]
+  );
+
   useEffect(() => {
-    setModels([]);
+    let cancelled = false;
+    void listCachedModels(activeProviderId)
+      .then((cachedModels) => {
+        if (cancelled) return;
+        setModels(cachedModels);
+        if (!currentConversationIdRef.current) {
+          setSelectedModel(cachedModels.find((model) => !model.isHidden)?.id ?? cachedModels[0]?.id ?? "");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setModels([]);
+      });
     setTestResult(null);
     if (!currentConversationIdRef.current) {
       setSelectedModel("");
     }
     setSelectedSecretId("");
+    return () => {
+      cancelled = true;
+    };
   }, [activeProviderId]);
+
+  useEffect(() => {
+    setModelAlias(selectedModelInfo?.alias ?? "");
+  }, [selectedModelInfo]);
 
   async function persistCurrentConversation(messages: ChatMessage[] = chatMessagesRef.current) {
     try {
@@ -206,8 +234,8 @@ export default function App() {
     try {
       const loaded = await loadExistingConversation(conversationId);
       currentConversationIdRef.current = loaded.detail.summary.id;
+      setSelectedModel(loaded.detail.summary.modelId);
       setActiveProviderId(loaded.detail.summary.providerId);
-      setTimeout(() => setSelectedModel(loaded.detail.summary.modelId), 0);
       setTemperature(loaded.temperature);
       setMaxTokens(loaded.maxTokens);
       setContextLength(loaded.contextLength);
@@ -420,7 +448,11 @@ export default function App() {
     setCurrentStreamId(streamId);
     setChatInput("");
     setPendingImages([]);
-    updateChatMessages((messages) => [...messages, { role: "user", content: displayContent }, { role: "assistant", content: "" }]);
+    updateChatMessages((messages) => [
+      ...messages,
+      { role: "user", content: displayContent, images: userImages },
+      { role: "assistant", content: "" },
+    ]);
     setBusy(true);
 
     try {
@@ -573,9 +605,10 @@ export default function App() {
     setTestResult(null);
     try {
       const result = await listModelsWithKey(templateToConfig(activeProvider), unlockedApiKey);
-      setModels(result);
-      setSelectedModel(result[0]?.id ?? "");
-      setTestResult({ ok: true, providerId: activeProvider.id, modelCount: result.length, message: `Fetched ${result.length} models.` });
+      const cachedModels = await saveModelCache(activeProvider.id, result);
+      setModels(cachedModels);
+      setSelectedModel(cachedModels.find((model) => !model.isHidden)?.id ?? cachedModels[0]?.id ?? "");
+      setTestResult({ ok: true, providerId: activeProvider.id, modelCount: cachedModels.length, message: `Fetched ${cachedModels.length} models.` });
     } catch (error) {
       setTestResult({ ok: false, providerId: activeProvider.id, message: errorMessage(error) });
     } finally {
@@ -594,6 +627,53 @@ export default function App() {
       setTestResult({ ok: false, providerId: activeProvider.id, message: errorMessage(error) });
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleMigrateSavedKey() {
+    if (!activeProvider || !selectedSecretId || !masterPassword) return;
+    setBusy(true);
+    try {
+      const record = await vaultMigrateSecretToSystemKeychain(selectedSecretId, masterPassword);
+      await reloadVaultRecords();
+      setTestResult({ ok: true, providerId: activeProvider.id, message: `Migrated ${record.displayName} to the system keychain.` });
+    } catch (error) {
+      setTestResult({ ok: false, providerId: activeProvider.id, message: errorMessage(error) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function applySelectedModel(modelId: string) {
+    const model = models.find((item) => item.id === modelId);
+    setSelectedModel(modelId);
+    const params = model?.defaultParams;
+    if (typeof params?.temperature === "number") setTemperature(String(params.temperature));
+    if (typeof params?.maxTokens === "number") setMaxTokens(String(params.maxTokens));
+    if (typeof params?.contextLength === "number") setContextLength(String(params.contextLength));
+  }
+
+  async function handleSaveModelPreferences(options?: { favorite?: boolean; hidden?: boolean; saveCurrentDefaults?: boolean }) {
+    if (!activeProvider || !selectedModelInfo) return;
+    try {
+      const updated = await updateModelPreferences({
+        providerId: activeProvider.id,
+        modelId: selectedModelInfo.id,
+        isFavorite: options?.favorite ?? selectedModelInfo.isFavorite,
+        isHidden: options?.hidden ?? selectedModelInfo.isHidden,
+        alias: modelAlias,
+        defaultParams: options?.saveCurrentDefaults
+          ? {
+              temperature: parseFiniteNumber(temperature, 0.7),
+              maxTokens: parsePositiveInt(maxTokens, 512),
+              contextLength: parsePositiveInt(contextLength, 8192),
+            }
+          : selectedModelInfo.defaultParams,
+      });
+      setModels((current) => current.map((model) => (model.id === updated.id ? updated : model)));
+      setTestResult({ ok: true, providerId: activeProvider.id, message: `Saved preferences for ${updated.displayName}.` });
+    } catch (error) {
+      setTestResult({ ok: false, providerId: activeProvider.id, message: errorMessage(error) });
     }
   }
 
@@ -621,7 +701,23 @@ export default function App() {
       <section className="chat-panel">
         <header><div><h1>Lightweight chat client</h1><p>Streaming chat is wired for OpenAI-compatible, Responses, Gemini, and Anthropic providers. Conversations auto-save locally after each stream.</p></div><button className="secondary" onClick={handleListModelsWithSavedKey} disabled={busy || !selectedSecretId}><RefreshCw size={16} /> Refresh models</button></header>
         <div className="messages">
-          {chatMessages.map((message, index) => <article key={index} className={`message ${message.role}`}><span>{message.role}</span><p>{message.content || (message.role === "assistant" ? "Streaming..." : "")}</p></article>)}
+          {chatMessages.map((message, index) => (
+            <article key={index} className={`message ${message.role}`}>
+              <span>{message.role}</span>
+              <p>{message.content || (message.role === "assistant" ? "Streaming..." : "")}</p>
+              {(message.images?.length ?? 0) > 0 && (
+                <div className="message-attachments">
+                  {message.images?.map((image, imageIndex) => (
+                    <img
+                      key={`${image.mediaType}-${imageIndex}`}
+                      src={`data:${image.mediaType};base64,${image.dataBase64}`}
+                      alt={`Attached image ${imageIndex + 1}`}
+                    />
+                  ))}
+                </div>
+              )}
+            </article>
+          ))}
         </div>
         <footer className="composer">
           <button onClick={() => imageInputRef.current?.click()} disabled={busy}><UploadCloud size={18} /> Image</button>
@@ -635,8 +731,8 @@ export default function App() {
       </section>
 
       <aside className="inspector">
-        <section className="card"><h2><KeyRound size={16} /> API key vault</h2><p>New records are saved with the OS keychain data key. Master password is only needed for older records or WebDAV config.</p><label>Master password<input type="password" value={masterPassword} onChange={(event) => setMasterPassword(event.target.value)} placeholder="For legacy records / WebDAV config" /></label><label>Saved key<select value={selectedSecretId} onChange={(event) => setSelectedSecretId(event.target.value)}><option value="">Select saved key</option>{providerSecrets.map((secret) => <option key={secret.id} value={secret.id}>{secret.displayName}</option>)}</select></label><div className="button-row"><button onClick={handleListModelsWithSavedKey} disabled={busy || !selectedSecretId}>List saved</button><button className="primary" onClick={handleTestProviderWithSavedKey} disabled={busy || !selectedSecretId}>Test saved</button></div><button className="danger" onClick={handleDeleteSavedKey} disabled={busy || !selectedSecretId}>Delete saved key</button>{testResult && <p className={testResult.ok ? "ok" : "warn"}>{testResult.message}</p>}</section>
-        <section className="card"><h2>System keychain</h2><p>Default vault mode uses an OS keychain data key for new local records.</p>{keychainStatus && <p className={keychainStatus.available ? "ok" : "warn"}>{keychainStatus.message}</p>}<dl><dt>Service</dt><dd>{keychainStatus?.service ?? "app.keysync.ai"}</dd><dt>Account</dt><dd>{keychainStatus?.account ?? "vault-data-key"}</dd><dt>Data key</dt><dd>{keychainStatus?.hasDataKey ? "Present" : "Missing"}</dd></dl><div className="button-row"><button onClick={reloadSystemKeychainStatus} disabled={busy}>Refresh</button><button className="primary" onClick={handleInitSystemKeychain} disabled={busy}>Init data key</button></div><button className="danger" onClick={handleDeleteSystemKeychain} disabled={busy || !keychainStatus?.hasDataKey}>Delete data key</button></section>
+        <section className="card"><h2><KeyRound size={16} /> API key vault</h2><p>New records are saved with the OS keychain data key. Master password is only needed for older records, migration, or WebDAV config.</p><label>Master password<input type="password" value={masterPassword} onChange={(event) => setMasterPassword(event.target.value)} placeholder="For legacy records / WebDAV config" /></label><label>Saved key<select value={selectedSecretId} onChange={(event) => setSelectedSecretId(event.target.value)}><option value="">Select saved key</option>{providerSecrets.map((secret) => <option key={secret.id} value={secret.id}>{secret.displayName}</option>)}</select></label><div className="button-row"><button onClick={handleListModelsWithSavedKey} disabled={busy || !selectedSecretId}>List saved</button><button className="primary" onClick={handleTestProviderWithSavedKey} disabled={busy || !selectedSecretId}>Test saved</button></div><button className="secondary full" onClick={handleMigrateSavedKey} disabled={busy || !selectedSecretId || !masterPassword}>Migrate legacy key to system keychain</button><button className="danger" onClick={handleDeleteSavedKey} disabled={busy || !selectedSecretId}>Delete saved key</button>{testResult && <p className={testResult.ok ? "ok" : "warn"}>{testResult.message}</p>}</section>
+        <section className="card"><h2>System keychain</h2><p>Default vault mode uses an OS keychain data key for new local records. The data key cannot be deleted while saved records still depend on it.</p>{keychainStatus && <p className={keychainStatus.available ? "ok" : "warn"}>{keychainStatus.message}</p>}<dl><dt>Service</dt><dd>{keychainStatus?.service ?? "app.keysync.ai"}</dd><dt>Account</dt><dd>{keychainStatus?.account ?? "vault-data-key"}</dd><dt>Data key</dt><dd>{keychainStatus?.hasDataKey ? "Present" : "Missing"}</dd></dl><div className="button-row"><button onClick={reloadSystemKeychainStatus} disabled={busy}>Refresh</button><button className="primary" onClick={handleInitSystemKeychain} disabled={busy}>Init data key</button></div><button className="danger" onClick={handleDeleteSystemKeychain} disabled={busy || !keychainStatus?.hasDataKey}>Delete data key</button></section>
         <section className="card"><h2>Save new key</h2><label>Display name<input value={keyName} onChange={(event) => setKeyName(event.target.value)} placeholder="Personal OpenAI key" /></label><label>API Key<input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-... or provider token" /></label><div className="button-row"><button onClick={handleListModelsWithRawKey} disabled={busy || !apiKey.trim()}>List raw</button><button onClick={handleTestProviderWithRawKey} disabled={busy || !apiKey.trim()}>Test raw</button></div><button className="primary full" onClick={handleSaveKey} disabled={busy || !apiKey.trim()}>Save with system keychain</button><button className="secondary full" onClick={handleSaveKeyWithMasterPassword} disabled={busy || !apiKey.trim() || !masterPassword}>Save with master password</button></section>
         <WebDavSyncCard
           busy={busy}
@@ -656,8 +752,8 @@ export default function App() {
         />
         {conflictRecords.length > 0 && <section className="card"><h2>Conflict review</h2><p>Remote conflict copies were preserved during merge. Rename to keep them, or delete duplicate copies.</p><div className="model-list">{conflictRecords.map((record) => <span key={record.id}>{record.displayName}<small>{record.providerId} · {record.updatedAt}</small><input value={conflictRename[record.id] ?? record.displayName.replace(" [conflict remote]", "")} onChange={(event) => setConflictRename({ ...conflictRename, [record.id]: event.target.value })} /><div className="button-row"><button onClick={() => void handleAcceptConflict(record)} disabled={busy}>Keep renamed</button><button className="danger" onClick={() => void deleteRecord(record.id, "Deleted conflict copy.")} disabled={busy}>Delete conflict</button></div></span>)}</div></section>}
         <section className="card"><h2>Active provider</h2>{activeProvider ? <dl><dt>Name</dt><dd>{activeProvider.name}</dd><dt>Base URL</dt><dd>{activeProvider.baseUrl}</dd><dt>Streaming</dt><dd>{activeProvider.supportsStreaming ? "Supported" : "Not supported"}</dd><dt>Images</dt><dd>{activeProvider.supportsImages ? "Supported" : "Not supported"}</dd></dl> : <p>No provider loaded.</p>}</section>
-        <section className="card"><h2>Models</h2>{models.length ? <><label>Selected model<select value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)}>{models.map((model) => <option key={model.id} value={model.id}>{model.displayName}</option>)}</select></label><div className="model-list">{models.slice(0, 8).map((model) => <span key={model.id}>{model.displayName}<small>{model.capabilities.join(", ")}</small></span>)}</div></> : <p>No models loaded yet.</p>}</section>
-        <section className="card"><h2>Model params</h2><label>System prompt<textarea value={chatMessages.find((message) => message.role === "system")?.content ?? ""} onChange={(event) => updateChatMessages((messages) => [{ role: "system", content: event.target.value }, ...messages.filter((message) => message.role !== "system")])} placeholder="You are a helpful assistant." /></label><label>Temperature<input type="number" value={temperature} min="0" max="2" step="0.1" onChange={(event) => setTemperature(event.target.value)} /></label><label>Max output tokens<input type="number" value={maxTokens} min="1" step="1" onChange={(event) => setMaxTokens(event.target.value)} /></label><label>Context length<input type="number" value={contextLength} min="256" step="256" onChange={(event) => setContextLength(event.target.value)} /></label><p>Context length trims recent history before sending. Images are attached only on the current turn.</p></section>
+        <section className="card"><h2>Models</h2>{models.length ? <><label>Selected model<select value={selectedModel} onChange={(event) => applySelectedModel(event.target.value)}>{models.filter((model) => !model.isHidden || model.id === selectedModel).map((model) => <option key={model.id} value={model.id}>{model.isFavorite ? "★ " : ""}{model.alias || model.displayName}</option>)}</select></label>{selectedModelInfo && <><label>Model alias<input value={modelAlias} onChange={(event) => setModelAlias(event.target.value)} placeholder={selectedModelInfo.displayName} /></label><div className="button-row"><button onClick={() => void handleSaveModelPreferences()}>Save alias</button><button onClick={() => void handleSaveModelPreferences({ favorite: !selectedModelInfo.isFavorite })}>{selectedModelInfo.isFavorite ? "Unfavorite" : "Favorite"}</button></div><div className="button-row"><button onClick={() => void handleSaveModelPreferences({ saveCurrentDefaults: true })}>Save current params</button><button className="danger inline" onClick={() => void handleSaveModelPreferences({ hidden: !selectedModelInfo.isHidden })}>{selectedModelInfo.isHidden ? "Show model" : "Hide model"}</button></div></>}<div className="model-list">{models.filter((model) => !model.isHidden).slice(0, 8).map((model) => <span key={model.id}>{model.isFavorite ? "★ " : ""}{model.alias || model.displayName}<small>{model.capabilities.join(", ")}</small></span>)}</div></> : <p>No models loaded yet.</p>}</section>
+        <section className="card"><h2>Model params</h2><label>System prompt<textarea value={chatMessages.find((message) => message.role === "system")?.content ?? ""} onChange={(event) => updateChatMessages((messages) => [{ role: "system", content: event.target.value }, ...messages.filter((message) => message.role !== "system")])} placeholder="You are a helpful assistant." /></label><label>Temperature<input type="number" value={temperature} min="0" max="2" step="0.1" onChange={(event) => setTemperature(event.target.value)} /></label><label>Max output tokens<input type="number" value={maxTokens} min="1" step="1" onChange={(event) => setMaxTokens(event.target.value)} /></label><label>Context length<input type="number" value={contextLength} min="256" step="256" onChange={(event) => setContextLength(event.target.value)} /></label><p>Context length trims recent history before sending. Images are retained in saved conversations and included only when context keeps that turn.</p></section>
       </aside>
     </main>
   );

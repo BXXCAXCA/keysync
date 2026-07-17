@@ -12,6 +12,7 @@ import type {
   SystemKeychainStatus,
   TestResult,
   UnifiedChatRequest,
+  UpdateModelPreferencesInput,
   VaultSecurityProfile,
   WebDavConfig,
   WebDavConfigSummary,
@@ -66,6 +67,18 @@ export async function listModelsWithKey(config: ProviderConfig, apiKey: string):
 
 export async function testProviderWithKey(config: ProviderConfig, apiKey: string, model?: string): Promise<TestResult> {
   return await invoke<TestResult>("test_provider_with_key", { config, apiKey, model: model || null });
+}
+
+export async function saveModelCache(providerId: string, models: ModelInfo[]): Promise<ModelInfo[]> {
+  return await invoke<ModelInfo[]>("save_model_cache", { providerId, models });
+}
+
+export async function listCachedModels(providerId: string): Promise<ModelInfo[]> {
+  return await invoke<ModelInfo[]>("list_cached_models", { providerId });
+}
+
+export async function updateModelPreferences(input: UpdateModelPreferencesInput): Promise<ModelInfo> {
+  return await invoke<ModelInfo>("update_model_preferences", { input });
 }
 
 export async function startChatStreamWithKey(config: ProviderConfig, apiKey: string, request: UnifiedChatRequest, streamId?: string): Promise<ChatStartResult> {
@@ -130,6 +143,10 @@ export async function vaultSaveSecretWithMasterPassword(providerId: string, disp
 
 export async function vaultDecryptSecretWithMasterPassword(recordId: string, masterPassword: string): Promise<SecretPayload> {
   return await invoke<SecretPayload>("vault_decrypt_secret_with_master_password", { recordId, masterPassword });
+}
+
+export async function vaultMigrateSecretToSystemKeychain(recordId: string, masterPassword: string): Promise<SecretRecordSummary> {
+  return await invoke<SecretRecordSummary>("vault_migrate_secret_to_system_keychain", { recordId, masterPassword });
 }
 
 export async function vaultDeleteSecretRecord(recordId: string): Promise<boolean> {

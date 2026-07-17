@@ -39,6 +39,16 @@ export interface ModelInfo {
   isFavorite: boolean;
   isHidden: boolean;
   alias?: string;
+  defaultParams?: Record<string, unknown>;
+}
+
+export interface UpdateModelPreferencesInput {
+  providerId: string;
+  modelId: string;
+  isFavorite: boolean;
+  isHidden: boolean;
+  alias?: string;
+  defaultParams?: Record<string, unknown>;
 }
 
 export interface TestResult {

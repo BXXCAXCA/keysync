@@ -170,7 +170,7 @@ pub fn save_conversation(
             )
             .map_err(storage_error)?;
 
-        for message in input.messages {
+        for (sequence, message) in input.messages.into_iter().enumerate() {
             if message.role.trim().is_empty()
                 || (message.content.trim().is_empty() && message.attachments.is_empty())
             {
@@ -196,8 +196,8 @@ pub fn save_conversation(
 
             transaction
                 .execute(
-                    "INSERT INTO messages (id, conversation_id, role, content, attachments_json, token_usage_json, created_at) \
-                     VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6)",
+                    "INSERT INTO messages (id, conversation_id, role, content, attachments_json, token_usage_json, created_at, sequence) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7)",
                     params![
                         &message_id,
                         &conversation_id,
@@ -205,6 +205,7 @@ pub fn save_conversation(
                         &message.content,
                         &attachments_json,
                         &now,
+                        sequence as i64,
                     ],
                 )
                 .map_err(storage_error)?;
@@ -262,7 +263,7 @@ fn load_conversation_detail(
         .connection()
         .prepare(
             "SELECT id, conversation_id, role, content, attachments_json, created_at \
-             FROM messages WHERE conversation_id = ?1 ORDER BY rowid ASC",
+             FROM messages WHERE conversation_id = ?1 ORDER BY sequence ASC, rowid ASC",
         )
         .map_err(storage_error)?;
     let rows = statement

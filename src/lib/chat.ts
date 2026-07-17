@@ -1,10 +1,11 @@
-import type { UnifiedMessage } from "../types";
+import type { ImageAttachment, UnifiedMessage } from "../types";
 
 export type ChatRole = "system" | "user" | "assistant";
 
 export type ChatMessage = {
   role: ChatRole;
   content: string;
+  images?: ImageAttachment[];
 };
 
 export const initialMessages: ChatMessage[] = [
@@ -51,7 +52,11 @@ export function buildContextMessages(messages: ChatMessage[], nextMessage: Unifi
   const budget = Math.max(256, contextLength) * 4;
   const history = messages
     .filter((message) => message.role !== "system")
-    .map<UnifiedMessage>((message) => ({ role: message.role, content: message.content, images: [] }));
+    .map<UnifiedMessage>((message) => ({
+      role: message.role,
+      content: message.content,
+      images: message.images ?? [],
+    }));
   const combined = [...history, nextMessage];
   const selected: UnifiedMessage[] = [];
   let used = 0;
