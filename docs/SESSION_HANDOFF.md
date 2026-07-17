@@ -98,6 +98,9 @@ Rust/Tauri backend currently includes:
 - master-password unlock/save path
 - WebDAV vault/config commands
 - SQLite local conversation persistence
+- SQLite model cache and persisted model preferences
+- Encrypted local application settings for proxy configuration
+- Encrypted and confirmation-gated plaintext vault backup commands
 
 Conversation saves are now atomic at the SQLite level: the conversation upsert, old message deletion, new message inserts, and commit run inside one transaction.
 
@@ -109,7 +112,7 @@ The repository has GitHub Actions CI configured in `.github/workflows/ci.yml`:
 - `Rust cargo check`
 - `Rust fmt and clippy` as non-blocking quality job
 
-Important limitation: no local build or cargo command has been run in the current ChatGPT environment. Previous workflow/status checks often returned no run records through the available connector wrapper. Treat compile status as unknown until verified.
+Verified locally on 2026-07-18: `npm run build` passed after installing the frontend dependencies and committing `package-lock.json`. Rust/Cargo is not installed in this environment, so Rust compile/format/Clippy status remains unknown. Previous workflow/status checks often returned no run records through the available connector wrapper.
 
 ## Important repository files
 
@@ -157,6 +160,10 @@ Important limitation: no local build or cargo command has been run in the curren
 - `src-tauri/src/commands/conversations.rs`
   - local conversation list/load/save/delete commands
   - atomic save transaction
+- `src-tauri/src/commands/models.rs`
+  - model-cache and preference commands
+- `src-tauri/src/commands/settings.rs`
+  - system-keychain-encrypted global/provider proxy settings
 - `src-tauri/src/storage/mod.rs`
   - SQLite connection setup and migration runner
   - includes `connection_mut` for transactions
@@ -193,6 +200,8 @@ Important limitation: no local build or cargo command has been run in the curren
 - Added `docs/PERSISTENCE.md`.
 - Changed conversation save to use a SQLite transaction.
 - Moved frontend conversation state/persistence into `useConversations`.
+- Added explicit message sequence ordering and restored persisted image attachments into the chat UI and request context.
+- Added model favorites, hiding, aliases, and saved default parameters backed by SQLite.
 
 ### Frontend refactor
 
@@ -210,7 +219,6 @@ Important limitation: no local build or cargo command has been run in the curren
 
 ## Known risks and open issues
 
-- TypeScript build has not been locally verified after the latest refactors.
 - Rust build/check has not been locally verified after the latest backend changes.
 - CI status may not be visible through the current connector wrapper; check Actions manually or with more specific workflow tools if available.
 - `src/App.tsx` is still large and should continue to be split.
@@ -218,23 +226,19 @@ Important limitation: no local build or cargo command has been run in the curren
 - API key vault card and system keychain card are still inline in `App.tsx`.
 - Conflict review card is still inline in `App.tsx`.
 - Provider/model/model-params cards are still inline in `App.tsx`.
-- Previous image turns are displayed as text markers and are not restored as real image attachments in loaded conversations.
-- Conversation WebDAV sync is not implemented; WebDAV currently syncs encrypted vault/config data, not chat history.
-- Message ordering relies on SQLite `rowid` rather than an explicit sequence column.
+- Conversation WebDAV sync is not implemented; WebDAV currently syncs encrypted vault data, not chat history, model preferences, or proxy settings.
+- System-keychain-encrypted records cannot be decrypted on a different device after raw WebDAV sync; cross-device sync needs a master-password-protected transfer format.
+- Rust compile/format/Clippy remain unverified locally.
 - `initialMessages` array is reused; cloning initial messages may be safer for future mutation-heavy changes.
 
 ## Suggested next tasks
 
-1. Verify TypeScript with `npm run build` or CI.
-2. Verify Rust with `cargo check --manifest-path src-tauri/Cargo.toml`.
-3. If builds fail, fix blocking errors before further refactors.
-4. Extract `useWebDavSync` so WebDAV state/actions move out of `App.tsx`.
-5. Extract API key vault and system keychain cards into components.
-6. Extract conflict review card.
-7. Extract provider/model/model-params cards.
-8. Add provider-specific proxy configuration and persistence.
-9. Add encrypted backup/import-export and clipboard protection.
-10. Add settings/model preference WebDAV sync with revision metadata.
+1. Verify Rust with `cargo check --manifest-path src-tauri/Cargo.toml` when the toolchain is available.
+2. Implement a master-password-protected cross-device transfer format for system-keychain records, then make WebDAV upload/download use it.
+3. Add settings/model preference WebDAV sync with ETag/revision/device metadata.
+4. Add optional conversation-history sync only after the encrypted transfer model is complete.
+5. Add clipboard auto-clear and optional OS verification before exposing plaintext credentials.
+6. Extract `useWebDavSync`, vault/keychain, conflict, provider, and model inspector components from `App.tsx`.
 
 ## Resume instruction for future agents
 

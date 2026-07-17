@@ -121,11 +121,9 @@ Previous workflow/status checks through the available connector returned no usef
 
 ## Current next-step queue
 
-1. Run or inspect CI/build status.
-2. Fix any TypeScript build failures from recent refactors.
-3. Fix any Rust build or formatting failures.
-4. Extract `useWebDavSync`.
-5. Extract the remaining inspector cards into components.
-6. Remove the `setTimeout` model restore workaround during conversation loading.
-7. Persist and restore image attachments for saved conversations.
-8. Add explicit message ordering in SQLite.
+1. Verify Rust build, formatting, and Clippy when a local toolchain or actionable CI log is available.
+2. Implement a master-password-protected cross-device transfer format for keychain-encrypted records before calling WebDAV sync multi-device ready.
+3. Sync encrypted settings/model preferences with revision and device metadata.
+4. Add optional encrypted conversation-history sync after the transfer format is complete.
+5. Add clipboard auto-clear and optional OS verification before exposing plaintext credentials.
+6. Extract `useWebDavSync` and remaining inspector components from `App.tsx`.
