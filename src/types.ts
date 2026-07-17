@@ -35,6 +35,7 @@ export interface AppSettings {
   globalProxyUrl?: string;
   providerProxyUrls: Record<string, string>;
   providerProxyDisabled: string[];
+  customProviderTemplates: ProviderTemplate[];
 }
 
 export interface ModelInfo {

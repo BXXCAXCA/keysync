@@ -134,7 +134,7 @@ export default function App() {
   const [syncMessage, setSyncMessage] = useState("");
   const [keychainStatus, setKeychainStatus] = useState<SystemKeychainStatus | null>(null);
   const [plaintextExportConfirmation, setPlaintextExportConfirmation] = useState("");
-  const [appSettings, setAppSettings] = useState<AppSettings>({ providerProxyUrls: {}, providerProxyDisabled: [] });
+  const [appSettings, setAppSettings] = useState<AppSettings>({ providerProxyUrls: {}, providerProxyDisabled: [], customProviderTemplates: [] });
   const {
     conversationSummaries,
     currentConversationId,
@@ -187,7 +187,7 @@ export default function App() {
     reloadVaultRecords();
     reloadSavedWebDavSummary();
     reloadSystemKeychainStatus();
-    loadAppSettings().then(setAppSettings).catch(() => setAppSettings({ providerProxyUrls: {}, providerProxyDisabled: [] }));
+    loadAppSettings().then(setAppSettings).catch(() => setAppSettings({ providerProxyUrls: {}, providerProxyDisabled: [], customProviderTemplates: [] }));
   }, []);
 
   const activeProvider = useMemo(

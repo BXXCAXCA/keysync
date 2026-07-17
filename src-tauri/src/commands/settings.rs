@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
 use crate::errors::{ErrorPayload, KeySyncError};
+use crate::providers::ProviderTemplate;
 use crate::vault::{crypto, keychain};
 
 const LOCAL_SETTINGS_FILE: &str = "settings.local.json";
@@ -16,6 +17,7 @@ pub struct AppSettings {
     pub global_proxy_url: Option<String>,
     pub provider_proxy_urls: BTreeMap<String, String>,
     pub provider_proxy_disabled: BTreeSet<String>,
+    pub custom_provider_templates: Vec<ProviderTemplate>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -132,6 +134,16 @@ fn normalize_settings(mut settings: AppSettings) -> AppSettings {
         .filter_map(|provider_id| {
             let provider_id = provider_id.trim();
             (!provider_id.is_empty()).then(|| provider_id.to_owned())
+        })
+        .collect();
+    settings.custom_provider_templates = settings
+        .custom_provider_templates
+        .into_iter()
+        .filter(|template| {
+            !template.id.trim().is_empty()
+                && !template.name.trim().is_empty()
+                && !template.base_url.trim().is_empty()
+                && template.editable
         })
         .collect();
     settings

@@ -24,8 +24,13 @@ const ANTHROPIC_VERSION: &str = "2023-06-01";
 static ACTIVE_STREAMS: OnceLock<Mutex<HashMap<String, AbortHandle>>> = OnceLock::new();
 
 #[tauri::command]
-pub fn list_provider_templates() -> Vec<ProviderTemplate> {
-    default_provider_templates()
+pub fn list_provider_templates(app: tauri::AppHandle) -> Vec<ProviderTemplate> {
+    let mut templates = default_provider_templates();
+    if let Ok(settings) = crate::commands::settings::load_app_settings(app) {
+        templates.retain(|template| !settings.custom_provider_templates.iter().any(|custom| custom.id == template.id));
+        templates.extend(settings.custom_provider_templates);
+    }
+    templates
 }
 
 #[tauri::command]
