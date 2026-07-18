@@ -37,15 +37,15 @@ export function WebDavSyncCard({
 }: WebDavSyncCardProps) {
   return (
     <section className="card">
-      <h2>WebDAV sync</h2>
-      <p>Manual MVP sync for the encrypted local vault file. Downloads now merge by record ID and keep conflict copies.</p>
+      <h2>WebDAV 同步</h2>
+      <p>手动同步本地加密密钥库。下载会按记录 ID 合并，并保留冲突副本。</p>
       {savedWebdavSummary && (
         <p className="ok">
-          Saved: {savedWebdavSummary.username} @ {savedWebdavSummary.endpoint}/{savedWebdavSummary.remoteDir}
+          已保存：{savedWebdavSummary.username} @ {savedWebdavSummary.endpoint}/{savedWebdavSummary.remoteDir}
         </p>
       )}
       <label>
-        Endpoint
+        服务地址
         <input
           value={webdavConfig.endpoint}
           onChange={(event) => setWebdavConfig({ ...webdavConfig, endpoint: event.target.value })}
@@ -53,7 +53,7 @@ export function WebDavSyncCard({
         />
       </label>
       <label>
-        Remote directory
+        远程目录
         <input
           value={webdavConfig.remoteDir}
           onChange={(event) => setWebdavConfig({ ...webdavConfig, remoteDir: event.target.value })}
@@ -61,34 +61,34 @@ export function WebDavSyncCard({
         />
       </label>
       <label>
-        Username
+        用户名
         <input value={webdavConfig.username} onChange={(event) => setWebdavConfig({ ...webdavConfig, username: event.target.value })} />
       </label>
       <label>
-        Password
+        密码
         <input
           type="password"
           value={webdavConfig.password}
           onChange={(event) => setWebdavConfig({ ...webdavConfig, password: event.target.value })}
-          placeholder="Required only to save raw config"
+          placeholder="仅保存原始配置时需要"
         />
       </label>
       <div className="button-row">
-        <button onClick={onTestRaw} disabled={busy || !webdavConfig.endpoint}>Test raw</button>
-        <button onClick={onSaveConfig} disabled={busy || !webdavConfig.endpoint || !masterPassword}>Save encrypted</button>
+        <button onClick={onTestRaw} disabled={busy || !webdavConfig.endpoint}>测试当前配置</button>
+        <button onClick={onSaveConfig} disabled={busy || !webdavConfig.endpoint || !masterPassword}>加密保存</button>
       </div>
       <div className="button-row">
-        <button onClick={onUploadRaw} disabled={busy || !webdavConfig.endpoint}>Upload raw</button>
-        <button onClick={onDownloadRaw} disabled={busy || !webdavConfig.endpoint}>Merge download raw</button>
+        <button onClick={onUploadRaw} disabled={busy || !webdavConfig.endpoint}>上传当前密钥库</button>
+        <button onClick={onDownloadRaw} disabled={busy || !webdavConfig.endpoint}>下载并合并</button>
       </div>
       <div className="button-row">
-        <button onClick={onTestSaved} disabled={busy || !savedWebdavSummary || !masterPassword}>Test saved</button>
-        <button onClick={onUnlockSaved} disabled={busy || !savedWebdavSummary || !masterPassword}>Unlock to form</button>
+        <button onClick={onTestSaved} disabled={busy || !savedWebdavSummary || !masterPassword}>测试已保存配置</button>
+        <button onClick={onUnlockSaved} disabled={busy || !savedWebdavSummary || !masterPassword}>解锁并填入表单</button>
       </div>
       <div className="button-row">
-        <button onClick={onUploadSaved} disabled={busy || !savedWebdavSummary || !masterPassword}>Upload saved</button>
+        <button onClick={onUploadSaved} disabled={busy || !savedWebdavSummary || !masterPassword}>上传已保存密钥库</button>
         <button className="primary" onClick={onDownloadSaved} disabled={busy || !savedWebdavSummary || !masterPassword}>
-          Merge download saved
+          下载已保存密钥库并合并
         </button>
       </div>
       {syncMessage && <p className="ok">{syncMessage}</p>}

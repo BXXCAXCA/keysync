@@ -9,8 +9,8 @@ export type ChatMessage = {
 };
 
 export const initialMessages: ChatMessage[] = [
-  { role: "system", content: "System prompt, temperature, context length, and model settings will be configured here." },
-  { role: "assistant", content: "Save a provider credential, select a model, then send a message to test streaming chat." },
+  { role: "system", content: "可在右侧配置系统提示词、温度、上下文长度和模型参数。" },
+  { role: "assistant", content: "保存服务商密钥、选择模型后，即可发送消息测试流式对话。" },
 ];
 
 export function normalizeChatRole(role: string): ChatRole {
@@ -74,5 +74,5 @@ export function buildContextMessages(messages: ChatMessage[], nextMessage: Unifi
 
 export function titleFromMessages(messages: ChatMessage[]): string {
   const firstUser = messages.find((message) => message.role === "user" && message.content.trim());
-  return (firstUser?.content ?? "New conversation").replace(/\s+/g, " ").slice(0, 64);
+  return (firstUser?.content ?? "新建对话").replace(/\s+/g, " ").slice(0, 64);
 }

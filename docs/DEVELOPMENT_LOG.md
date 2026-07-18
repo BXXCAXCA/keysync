@@ -90,6 +90,11 @@ Still inline in `src/App.tsx`:
 - image composer behavior
 - WebDAV side-effect functions
 
+## Chinese interface
+
+- Converted the user-facing desktop UI to Simplified Chinese, including the provider/sidebar, chat composer, credential vault, backups, system keychain, proxy, WebDAV, conflict handling, custom-provider, model, and model-parameter surfaces.
+- Kept product names, API names, model IDs, URLs, and the explicit plaintext-export confirmation token `EXPORT` unchanged where they are part of a technical protocol.
+
 ## Documentation added or updated
 
 - `README.md`

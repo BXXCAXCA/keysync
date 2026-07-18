@@ -85,6 +85,8 @@ The frontend is still centered around `src/App.tsx`, but several reusable pieces
 
 `src/App.tsx` still owns a lot of UI and orchestration state, especially vault, keychain, provider/model, model parameters, image composer, and WebDAV side effects.
 
+The current desktop UI is Simplified Chinese by default. Product names, API/model identifiers, URLs, and the explicit `EXPORT` confirmation token remain unchanged where they are protocol values.
+
 ### Backend
 
 Rust/Tauri backend currently includes:
