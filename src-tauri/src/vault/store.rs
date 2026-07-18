@@ -17,7 +17,11 @@ pub struct VaultMergeReport {
 
 impl VaultFile {
     pub fn empty(device_id: String) -> Self {
-        Self { version: 1, device_id, records: Vec::new() }
+        Self {
+            version: 1,
+            device_id,
+            records: Vec::new(),
+        }
     }
 }
 
@@ -26,7 +30,8 @@ pub fn load_or_empty(path: &Path, device_id: String) -> Result<VaultFile> {
         return Ok(VaultFile::empty(device_id));
     }
 
-    let content = fs::read_to_string(path).map_err(|err| KeySyncError::Vault(format!("failed to read vault file: {err}")))?;
+    let content = fs::read_to_string(path)
+        .map_err(|err| KeySyncError::Vault(format!("failed to read vault file: {err}")))?;
     if content.trim().is_empty() {
         return Ok(VaultFile::empty(device_id));
     }
@@ -35,29 +40,40 @@ pub fn load_or_empty(path: &Path, device_id: String) -> Result<VaultFile> {
 }
 
 pub fn parse_vault_file(content: &str) -> Result<VaultFile> {
-    serde_json::from_str(content).map_err(|err| KeySyncError::Vault(format!("failed to parse vault file: {err}")))
+    serde_json::from_str(content)
+        .map_err(|err| KeySyncError::Vault(format!("failed to parse vault file: {err}")))
 }
 
 pub fn save(path: &Path, vault_file: &VaultFile) -> Result<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|err| KeySyncError::Vault(format!("failed to create vault directory: {err}")))?;
+        fs::create_dir_all(parent).map_err(|err| {
+            KeySyncError::Vault(format!("failed to create vault directory: {err}"))
+        })?;
     }
 
     let content = serialize_vault_file(vault_file)?;
-    fs::write(path, content).map_err(|err| KeySyncError::Vault(format!("failed to write vault file: {err}")))
+    fs::write(path, content)
+        .map_err(|err| KeySyncError::Vault(format!("failed to write vault file: {err}")))
 }
 
 pub fn serialize_vault_file(vault_file: &VaultFile) -> Result<String> {
-    serde_json::to_string_pretty(vault_file).map_err(|err| KeySyncError::Vault(format!("failed to serialize vault file: {err}")))
+    serde_json::to_string_pretty(vault_file)
+        .map_err(|err| KeySyncError::Vault(format!("failed to serialize vault file: {err}")))
 }
 
-pub fn create_record(provider_id: String, display_name: String, payload: SecretPayload, master_password: &str) -> Result<SecretRecord> {
+pub fn create_record(
+    provider_id: String,
+    display_name: String,
+    payload: SecretPayload,
+    master_password: &str,
+) -> Result<SecretRecord> {
     validate_record_input(&provider_id, &display_name, &payload)?;
     if master_password.is_empty() {
         return Err(KeySyncError::Vault("master password is required".into()));
     }
 
-    let plaintext = serde_json::to_vec(&payload).map_err(|err| KeySyncError::Vault(format!("failed to serialize secret payload: {err}")))?;
+    let plaintext = serde_json::to_vec(&payload)
+        .map_err(|err| KeySyncError::Vault(format!("failed to serialize secret payload: {err}")))?;
     let envelope = crypto::seal_with_master_password(master_password, &plaintext)?;
     let encrypted_payload = crypto::envelope_to_string(&envelope)?;
 
@@ -70,10 +86,16 @@ pub fn create_record(provider_id: String, display_name: String, payload: SecretP
     })
 }
 
-pub fn create_record_with_data_key(provider_id: String, display_name: String, payload: SecretPayload, data_key: &[u8]) -> Result<SecretRecord> {
+pub fn create_record_with_data_key(
+    provider_id: String,
+    display_name: String,
+    payload: SecretPayload,
+    data_key: &[u8],
+) -> Result<SecretRecord> {
     validate_record_input(&provider_id, &display_name, &payload)?;
     let data_key = fixed_data_key(data_key)?;
-    let plaintext = serde_json::to_vec(&payload).map_err(|err| KeySyncError::Vault(format!("failed to serialize secret payload: {err}")))?;
+    let plaintext = serde_json::to_vec(&payload)
+        .map_err(|err| KeySyncError::Vault(format!("failed to serialize secret payload: {err}")))?;
     let envelope = crypto::seal_with_data_key(&data_key, &plaintext)?;
     let encrypted_payload = crypto::envelope_to_string(&envelope)?;
 
@@ -93,18 +115,29 @@ pub fn decrypt_record(record: &SecretRecord, master_password: &str) -> Result<Se
 
     let envelope = crypto::envelope_from_string(&record.encrypted_payload)?;
     let plaintext = crypto::open_with_master_password(master_password, &envelope)?;
-    serde_json::from_slice(&plaintext).map_err(|err| KeySyncError::Vault(format!("failed to parse decrypted secret payload: {err}")))
+    serde_json::from_slice(&plaintext).map_err(|err| {
+        KeySyncError::Vault(format!("failed to parse decrypted secret payload: {err}"))
+    })
 }
 
-pub fn decrypt_record_with_data_key(record: &SecretRecord, data_key: &[u8]) -> Result<SecretPayload> {
+pub fn decrypt_record_with_data_key(
+    record: &SecretRecord,
+    data_key: &[u8],
+) -> Result<SecretPayload> {
     let data_key = fixed_data_key(data_key)?;
     let envelope = crypto::envelope_from_string(&record.encrypted_payload)?;
     let plaintext = crypto::open_with_data_key(&data_key, &envelope)?;
-    serde_json::from_slice(&plaintext).map_err(|err| KeySyncError::Vault(format!("failed to parse decrypted secret payload: {err}")))
+    serde_json::from_slice(&plaintext).map_err(|err| {
+        KeySyncError::Vault(format!("failed to parse decrypted secret payload: {err}"))
+    })
 }
 
 pub fn upsert_record(vault_file: &mut VaultFile, record: SecretRecord) {
-    if let Some(existing) = vault_file.records.iter_mut().find(|item| item.id == record.id) {
+    if let Some(existing) = vault_file
+        .records
+        .iter_mut()
+        .find(|item| item.id == record.id)
+    {
         *existing = record;
     } else {
         vault_file.records.push(record);
@@ -121,7 +154,11 @@ pub fn merge_remote_records(local: &mut VaultFile, remote: VaultFile) -> VaultMe
     let mut report = VaultMergeReport::default();
 
     for remote_record in remote.records {
-        match local.records.iter().position(|record| record.id == remote_record.id) {
+        match local
+            .records
+            .iter()
+            .position(|record| record.id == remote_record.id)
+        {
             None => {
                 local.records.push(remote_record);
                 report.added += 1;
@@ -136,7 +173,8 @@ pub fn merge_remote_records(local: &mut VaultFile, remote: VaultFile) -> VaultMe
                 } else {
                     let mut conflict_record = remote_record;
                     conflict_record.id = Uuid::new_v4();
-                    conflict_record.display_name = format!("{} [conflict remote]", conflict_record.display_name);
+                    conflict_record.display_name =
+                        format!("{} [conflict remote]", conflict_record.display_name);
                     conflict_record.updated_at = chrono::Utc::now();
                     local.records.push(conflict_record);
                     report.conflicts += 1;
@@ -148,7 +186,11 @@ pub fn merge_remote_records(local: &mut VaultFile, remote: VaultFile) -> VaultMe
     report
 }
 
-fn validate_record_input(provider_id: &str, display_name: &str, payload: &SecretPayload) -> Result<()> {
+fn validate_record_input(
+    provider_id: &str,
+    display_name: &str,
+    payload: &SecretPayload,
+) -> Result<()> {
     if provider_id.trim().is_empty() {
         return Err(KeySyncError::Vault("provider id is required".into()));
     }
@@ -184,8 +226,16 @@ mod tests {
     #[test]
     fn merge_adds_new_records() {
         let id = Uuid::new_v4();
-        let mut local = VaultFile { version: 1, device_id: "local".into(), records: Vec::new() };
-        let remote = VaultFile { version: 1, device_id: "remote".into(), records: vec![record(id, "a")] };
+        let mut local = VaultFile {
+            version: 1,
+            device_id: "local".into(),
+            records: Vec::new(),
+        };
+        let remote = VaultFile {
+            version: 1,
+            device_id: "remote".into(),
+            records: vec![record(id, "a")],
+        };
         let report = merge_remote_records(&mut local, remote);
         assert_eq!(report.added, 1);
         assert_eq!(local.records.len(), 1);
@@ -194,19 +244,37 @@ mod tests {
     #[test]
     fn merge_keeps_conflicting_remote_copy() {
         let id = Uuid::new_v4();
-        let mut local = VaultFile { version: 1, device_id: "local".into(), records: vec![record(id, "local")] };
-        let remote = VaultFile { version: 1, device_id: "remote".into(), records: vec![record(id, "remote")] };
+        let mut local = VaultFile {
+            version: 1,
+            device_id: "local".into(),
+            records: vec![record(id, "local")],
+        };
+        let remote = VaultFile {
+            version: 1,
+            device_id: "remote".into(),
+            records: vec![record(id, "remote")],
+        };
         let report = merge_remote_records(&mut local, remote);
         assert_eq!(report.conflicts, 1);
         assert_eq!(local.records.len(), 2);
-        assert!(local.records.iter().any(|item| item.display_name.ends_with("[conflict remote]")));
+        assert!(local
+            .records
+            .iter()
+            .any(|item| item.display_name.ends_with("[conflict remote]")));
     }
 
     #[test]
     fn data_key_record_roundtrip() {
         let data_key = [7_u8; 32];
-        let payload = SecretPayload { api_key: "secret".into(), organization_id: None, project_id: None, custom_headers: Vec::new() };
-        let record = create_record_with_data_key("openai".into(), "system".into(), payload, &data_key).unwrap();
+        let payload = SecretPayload {
+            api_key: "secret".into(),
+            organization_id: None,
+            project_id: None,
+            custom_headers: Vec::new(),
+        };
+        let record =
+            create_record_with_data_key("openai".into(), "system".into(), payload, &data_key)
+                .unwrap();
         let decrypted = decrypt_record_with_data_key(&record, &data_key).unwrap();
         assert_eq!(decrypted.api_key, "secret");
     }

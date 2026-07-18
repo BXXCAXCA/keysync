@@ -133,33 +133,54 @@ pub fn vault_delete_system_data_key(
 }
 
 #[tauri::command]
-pub fn vault_encrypt_with_master_password(plaintext: String, master_password: String) -> std::result::Result<String, ErrorPayload> {
+pub fn vault_encrypt_with_master_password(
+    plaintext: String,
+    master_password: String,
+) -> std::result::Result<String, ErrorPayload> {
     VaultService::new()
         .encrypt_for_sync_with_master_password(&master_password, plaintext.as_bytes())
         .map_err(ErrorPayload::from)
 }
 
 #[tauri::command]
-pub fn vault_decrypt_with_master_password(envelope: String, master_password: String) -> std::result::Result<String, ErrorPayload> {
+pub fn vault_decrypt_with_master_password(
+    envelope: String,
+    master_password: String,
+) -> std::result::Result<String, ErrorPayload> {
     let plaintext = VaultService::new()
         .decrypt_from_sync_with_master_password(&master_password, &envelope)
         .map_err(ErrorPayload::from)?;
 
-    String::from_utf8(plaintext)
-        .map_err(|_| ErrorPayload::from(KeySyncError::Vault("decrypted payload is not valid UTF-8".into())))
+    String::from_utf8(plaintext).map_err(|_| {
+        ErrorPayload::from(KeySyncError::Vault(
+            "decrypted payload is not valid UTF-8".into(),
+        ))
+    })
 }
 
 #[tauri::command]
-pub fn vault_list_secret_records(app: tauri::AppHandle) -> std::result::Result<Vec<SecretRecordSummary>, ErrorPayload> {
+pub fn vault_list_secret_records(
+    app: tauri::AppHandle,
+) -> std::result::Result<Vec<SecretRecordSummary>, ErrorPayload> {
     let path = local_vault_path(&app)?;
-    let vault_file = VaultService::new().load_file(&path, LOCAL_DEVICE_ID.to_owned()).map_err(ErrorPayload::from)?;
-    Ok(vault_file.records.iter().map(SecretRecordSummary::from).collect())
+    let vault_file = VaultService::new()
+        .load_file(&path, LOCAL_DEVICE_ID.to_owned())
+        .map_err(ErrorPayload::from)?;
+    Ok(vault_file
+        .records
+        .iter()
+        .map(SecretRecordSummary::from)
+        .collect())
 }
 
 #[tauri::command]
-pub fn vault_list_conflict_records(app: tauri::AppHandle) -> std::result::Result<Vec<SecretRecordSummary>, ErrorPayload> {
+pub fn vault_list_conflict_records(
+    app: tauri::AppHandle,
+) -> std::result::Result<Vec<SecretRecordSummary>, ErrorPayload> {
     let path = local_vault_path(&app)?;
-    let vault_file = VaultService::new().load_file(&path, LOCAL_DEVICE_ID.to_owned()).map_err(ErrorPayload::from)?;
+    let vault_file = VaultService::new()
+        .load_file(&path, LOCAL_DEVICE_ID.to_owned())
+        .map_err(ErrorPayload::from)?;
     Ok(vault_file
         .records
         .iter()
@@ -169,59 +190,98 @@ pub fn vault_list_conflict_records(app: tauri::AppHandle) -> std::result::Result
 }
 
 #[tauri::command]
-pub fn vault_save_secret_with_master_password(app: tauri::AppHandle, provider_id: String, display_name: String, payload: SecretPayload, master_password: String) -> std::result::Result<SecretRecordSummary, ErrorPayload> {
+pub fn vault_save_secret_with_master_password(
+    app: tauri::AppHandle,
+    provider_id: String,
+    display_name: String,
+    payload: SecretPayload,
+    master_password: String,
+) -> std::result::Result<SecretRecordSummary, ErrorPayload> {
     let path = local_vault_path(&app)?;
     let service = VaultService::new();
-    let mut vault_file = service.load_file(&path, LOCAL_DEVICE_ID.to_owned()).map_err(ErrorPayload::from)?;
+    let mut vault_file = service
+        .load_file(&path, LOCAL_DEVICE_ID.to_owned())
+        .map_err(ErrorPayload::from)?;
     let record = service
-        .create_secret_record_with_master_password(provider_id, display_name, payload, &master_password)
+        .create_secret_record_with_master_password(
+            provider_id,
+            display_name,
+            payload,
+            &master_password,
+        )
         .map_err(ErrorPayload::from)?;
     crate::vault::store::upsert_record(&mut vault_file, record.clone());
-    service.save_file(&path, &vault_file).map_err(ErrorPayload::from)?;
+    service
+        .save_file(&path, &vault_file)
+        .map_err(ErrorPayload::from)?;
     Ok(SecretRecordSummary::from(&record))
 }
 
 #[tauri::command]
-pub fn vault_save_secret_with_system_keychain(app: tauri::AppHandle, provider_id: String, display_name: String, payload: SecretPayload) -> std::result::Result<SecretRecordSummary, ErrorPayload> {
+pub fn vault_save_secret_with_system_keychain(
+    app: tauri::AppHandle,
+    provider_id: String,
+    display_name: String,
+    payload: SecretPayload,
+) -> std::result::Result<SecretRecordSummary, ErrorPayload> {
     let data_key = load_or_create_system_data_key()?;
     let path = local_vault_path(&app)?;
     let service = VaultService::new();
-    let mut vault_file = service.load_file(&path, LOCAL_DEVICE_ID.to_owned()).map_err(ErrorPayload::from)?;
+    let mut vault_file = service
+        .load_file(&path, LOCAL_DEVICE_ID.to_owned())
+        .map_err(ErrorPayload::from)?;
     let record = service
         .create_secret_record_with_data_key(provider_id, display_name, payload, &data_key)
         .map_err(ErrorPayload::from)?;
     crate::vault::store::upsert_record(&mut vault_file, record.clone());
-    service.save_file(&path, &vault_file).map_err(ErrorPayload::from)?;
+    service
+        .save_file(&path, &vault_file)
+        .map_err(ErrorPayload::from)?;
     Ok(SecretRecordSummary::from(&record))
 }
 
 #[tauri::command]
-pub fn vault_decrypt_secret_with_master_password(app: tauri::AppHandle, record_id: String, master_password: String) -> std::result::Result<SecretPayload, ErrorPayload> {
+pub fn vault_decrypt_secret_with_master_password(
+    app: tauri::AppHandle,
+    record_id: String,
+    master_password: String,
+) -> std::result::Result<SecretPayload, ErrorPayload> {
     let path = local_vault_path(&app)?;
     let service = VaultService::new();
-    let vault_file = service.load_file(&path, LOCAL_DEVICE_ID.to_owned()).map_err(ErrorPayload::from)?;
+    let vault_file = service
+        .load_file(&path, LOCAL_DEVICE_ID.to_owned())
+        .map_err(ErrorPayload::from)?;
     let record_uuid = parse_record_id(&record_id)?;
     let record = vault_file
         .records
         .iter()
         .find(|record| record.id == record_uuid)
         .ok_or_else(|| ErrorPayload::from(KeySyncError::Vault("secret record not found".into())))?;
-    service.decrypt_secret_record_with_master_password(record, &master_password).map_err(ErrorPayload::from)
+    service
+        .decrypt_secret_record_with_master_password(record, &master_password)
+        .map_err(ErrorPayload::from)
 }
 
 #[tauri::command]
-pub fn vault_decrypt_secret_with_system_keychain(app: tauri::AppHandle, record_id: String) -> std::result::Result<SecretPayload, ErrorPayload> {
+pub fn vault_decrypt_secret_with_system_keychain(
+    app: tauri::AppHandle,
+    record_id: String,
+) -> std::result::Result<SecretPayload, ErrorPayload> {
     let data_key = keychain::load_data_key().map_err(ErrorPayload::from)?;
     let path = local_vault_path(&app)?;
     let service = VaultService::new();
-    let vault_file = service.load_file(&path, LOCAL_DEVICE_ID.to_owned()).map_err(ErrorPayload::from)?;
+    let vault_file = service
+        .load_file(&path, LOCAL_DEVICE_ID.to_owned())
+        .map_err(ErrorPayload::from)?;
     let record_uuid = parse_record_id(&record_id)?;
     let record = vault_file
         .records
         .iter()
         .find(|record| record.id == record_uuid)
         .ok_or_else(|| ErrorPayload::from(KeySyncError::Vault("secret record not found".into())))?;
-    service.decrypt_secret_record_with_data_key(record, &data_key).map_err(ErrorPayload::from)
+    service
+        .decrypt_secret_record_with_data_key(record, &data_key)
+        .map_err(ErrorPayload::from)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -286,29 +346,46 @@ pub fn vault_migrate_secret_to_system_keychain(
     migrated.id = record_uuid;
     migrated.updated_at = chrono::Utc::now();
     crate::vault::store::upsert_record(&mut vault_file, migrated.clone());
-    service.save_file(&path, &vault_file).map_err(ErrorPayload::from)?;
+    service
+        .save_file(&path, &vault_file)
+        .map_err(ErrorPayload::from)?;
     Ok(SecretRecordSummary::from(&migrated))
 }
 
 #[tauri::command]
-pub fn vault_delete_secret_record(app: tauri::AppHandle, record_id: String) -> std::result::Result<bool, ErrorPayload> {
+pub fn vault_delete_secret_record(
+    app: tauri::AppHandle,
+    record_id: String,
+) -> std::result::Result<bool, ErrorPayload> {
     let path = local_vault_path(&app)?;
     let service = VaultService::new();
-    let mut vault_file: VaultFile = service.load_file(&path, LOCAL_DEVICE_ID.to_owned()).map_err(ErrorPayload::from)?;
+    let mut vault_file: VaultFile = service
+        .load_file(&path, LOCAL_DEVICE_ID.to_owned())
+        .map_err(ErrorPayload::from)?;
     let deleted = crate::vault::store::delete_record(&mut vault_file, parse_record_id(&record_id)?);
-    service.save_file(&path, &vault_file).map_err(ErrorPayload::from)?;
+    service
+        .save_file(&path, &vault_file)
+        .map_err(ErrorPayload::from)?;
     Ok(deleted)
 }
 
 #[tauri::command]
-pub fn vault_rename_secret_record(app: tauri::AppHandle, record_id: String, display_name: String) -> std::result::Result<SecretRecordSummary, ErrorPayload> {
+pub fn vault_rename_secret_record(
+    app: tauri::AppHandle,
+    record_id: String,
+    display_name: String,
+) -> std::result::Result<SecretRecordSummary, ErrorPayload> {
     if display_name.trim().is_empty() {
-        return Err(ErrorPayload::from(KeySyncError::Vault("display name is required".into())));
+        return Err(ErrorPayload::from(KeySyncError::Vault(
+            "display name is required".into(),
+        )));
     }
 
     let path = local_vault_path(&app)?;
     let service = VaultService::new();
-    let mut vault_file: VaultFile = service.load_file(&path, LOCAL_DEVICE_ID.to_owned()).map_err(ErrorPayload::from)?;
+    let mut vault_file: VaultFile = service
+        .load_file(&path, LOCAL_DEVICE_ID.to_owned())
+        .map_err(ErrorPayload::from)?;
     let record_uuid = parse_record_id(&record_id)?;
     let record = vault_file
         .records
@@ -318,7 +395,9 @@ pub fn vault_rename_secret_record(app: tauri::AppHandle, record_id: String, disp
     record.display_name = display_name.trim().to_owned();
     record.updated_at = chrono::Utc::now();
     let summary = SecretRecordSummary::from(&*record);
-    service.save_file(&path, &vault_file).map_err(ErrorPayload::from)?;
+    service
+        .save_file(&path, &vault_file)
+        .map_err(ErrorPayload::from)?;
     Ok(summary)
 }
 
@@ -349,7 +428,9 @@ pub fn vault_import_encrypted_backup(
         .load_file(&path, LOCAL_DEVICE_ID.to_owned())
         .map_err(ErrorPayload::from)?;
     let report = crate::vault::store::merge_remote_records(&mut local, imported);
-    service.save_file(&path, &local).map_err(ErrorPayload::from)?;
+    service
+        .save_file(&path, &local)
+        .map_err(ErrorPayload::from)?;
     Ok(VaultImportResult {
         imported: report.added,
         conflicts: report.conflicts,
@@ -444,7 +525,9 @@ pub fn vault_import_plaintext_backup(
         crate::vault::store::upsert_record(&mut vault_file, record);
         imported += 1;
     }
-    service.save_file(&path, &vault_file).map_err(ErrorPayload::from)?;
+    service
+        .save_file(&path, &vault_file)
+        .map_err(ErrorPayload::from)?;
     Ok(VaultImportResult {
         imported,
         conflicts: 0,
@@ -452,13 +535,18 @@ pub fn vault_import_plaintext_backup(
 }
 
 fn local_vault_path(app: &tauri::AppHandle) -> std::result::Result<PathBuf, ErrorPayload> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|err| ErrorPayload::from(KeySyncError::Vault(format!("failed to resolve app data directory: {err}"))))?;
+    let dir = app.path().app_data_dir().map_err(|err| {
+        ErrorPayload::from(KeySyncError::Vault(format!(
+            "failed to resolve app data directory: {err}"
+        )))
+    })?;
     Ok(dir.join(LOCAL_VAULT_FILE))
 }
 
 fn parse_record_id(record_id: &str) -> std::result::Result<Uuid, ErrorPayload> {
-    Uuid::parse_str(record_id).map_err(|err| ErrorPayload::from(KeySyncError::Vault(format!("invalid secret record id: {err}"))))
+    Uuid::parse_str(record_id).map_err(|err| {
+        ErrorPayload::from(KeySyncError::Vault(format!(
+            "invalid secret record id: {err}"
+        )))
+    })
 }

@@ -40,7 +40,7 @@ GitHub Actions runs on pull requests and pushes to `main`.
 
 - `Frontend build`: installs Node dependencies and runs `npm run build`.
 - `Rust cargo check`: installs Linux Tauri dependencies and runs `cargo check`.
-- `Rust fmt and clippy`: runs `cargo fmt --check` and `cargo clippy -D warnings`. This job is currently non-blocking so formatting/lint debt can be surfaced without blocking early MVP iteration.
+- `Rust fmt and clippy`: runs `cargo fmt --check` and `cargo clippy -D warnings` as a blocking quality gate.
 
 See `docs/CI.md` for local reproduction commands and first-failure triage notes.
 

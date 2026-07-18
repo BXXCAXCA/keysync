@@ -5,7 +5,10 @@ use std::time::Instant;
 
 use crate::errors::{KeySyncError, Result};
 use crate::providers::http::{build_client, join_url, parse_error_response};
-use crate::providers::{ChatStreamEvent, ModelInfo, ProviderAdapter, ProviderConfig, ProviderKind, TestResult, UnifiedChatRequest};
+use crate::providers::{
+    ChatStreamEvent, ModelInfo, ProviderAdapter, ProviderConfig, ProviderKind, TestResult,
+    UnifiedChatRequest,
+};
 
 pub struct OpenAiCompatibleAdapter;
 
@@ -21,11 +24,16 @@ struct OpenAiModel {
 
 #[async_trait]
 impl ProviderAdapter for OpenAiCompatibleAdapter {
-    fn kind(&self) -> ProviderKind { ProviderKind::OpenAiCompatible }
+    fn kind(&self) -> ProviderKind {
+        ProviderKind::OpenAiCompatible
+    }
 
     async fn list_models(&self, config: &ProviderConfig, api_key: &str) -> Result<Vec<ModelInfo>> {
         let client = build_client(config.proxy_url.as_deref())?;
-        let url = join_url(&config.base_url, config.models_path.as_deref().or(Some("/models")));
+        let url = join_url(
+            &config.base_url,
+            config.models_path.as_deref().or(Some("/models")),
+        );
         let response = client
             .get(url)
             .bearer_auth(api_key)
@@ -40,19 +48,39 @@ impl ProviderAdapter for OpenAiCompatibleAdapter {
         let payload = response
             .json::<OpenAiModelsResponse>()
             .await
-            .map_err(|err| KeySyncError::Provider(format!("failed to parse OpenAI-compatible model list: {err}")))?;
+            .map_err(|err| {
+                KeySyncError::Provider(format!(
+                    "failed to parse OpenAI-compatible model list: {err}"
+                ))
+            })?;
 
-        Ok(payload.data.into_iter().map(|model| model_info_from_id(&config.id, model.id)).collect())
+        Ok(payload
+            .data
+            .into_iter()
+            .map(|model| model_info_from_id(&config.id, model.id))
+            .collect())
     }
 
-    async fn test_key(&self, config: &ProviderConfig, api_key: &str, model: Option<&str>) -> Result<TestResult> {
+    async fn test_key(
+        &self,
+        config: &ProviderConfig,
+        api_key: &str,
+        model: Option<&str>,
+    ) -> Result<TestResult> {
         let started = Instant::now();
         let models = self.list_models(config, api_key).await?;
-        let selected_model = model.map(str::to_owned).or_else(|| models.first().map(|item| item.id.clone()));
-        let selected_model = selected_model.ok_or_else(|| KeySyncError::Provider("model list is empty; cannot run minimal request".into()))?;
+        let selected_model = model
+            .map(str::to_owned)
+            .or_else(|| models.first().map(|item| item.id.clone()));
+        let selected_model = selected_model.ok_or_else(|| {
+            KeySyncError::Provider("model list is empty; cannot run minimal request".into())
+        })?;
 
         let client = build_client(config.proxy_url.as_deref())?;
-        let url = join_url(&config.base_url, config.chat_path.as_deref().or(Some("/chat/completions")));
+        let url = join_url(
+            &config.base_url,
+            config.chat_path.as_deref().or(Some("/chat/completions")),
+        );
         let response = client
             .post(url)
             .bearer_auth(api_key)
@@ -80,10 +108,18 @@ impl ProviderAdapter for OpenAiCompatibleAdapter {
         })
     }
 
-    async fn chat_stream(&self, _config: &ProviderConfig, _api_key: &str, _request: UnifiedChatRequest) -> Result<Vec<ChatStreamEvent>> {
+    async fn chat_stream(
+        &self,
+        _config: &ProviderConfig,
+        _api_key: &str,
+        _request: UnifiedChatRequest,
+    ) -> Result<Vec<ChatStreamEvent>> {
         Ok(vec![
             ChatStreamEvent::Start,
-            ChatStreamEvent::Error { code: "not_implemented".into(), message: "Streaming parser will be implemented after provider detection".into() },
+            ChatStreamEvent::Error {
+                code: "not_implemented".into(),
+                message: "Streaming parser will be implemented after provider detection".into(),
+            },
         ])
     }
 }
@@ -91,7 +127,11 @@ impl ProviderAdapter for OpenAiCompatibleAdapter {
 pub fn model_info_from_id(provider_id: &str, id: String) -> ModelInfo {
     let lower = id.to_lowercase();
     let mut capabilities = vec!["chat".to_owned()];
-    if lower.contains("vision") || lower.contains("vl") || lower.contains("gpt-4o") || lower.contains("omni") {
+    if lower.contains("vision")
+        || lower.contains("vl")
+        || lower.contains("gpt-4o")
+        || lower.contains("omni")
+    {
         capabilities.push("vision".to_owned());
     }
     if lower.contains("embedding") || lower.contains("embed") {

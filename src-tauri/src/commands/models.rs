@@ -36,13 +36,17 @@ pub fn save_model_cache(
 
     let mut storage = open_storage(&app)?;
     let now = chrono::Utc::now().to_rfc3339();
-    let transaction = storage.connection_mut().transaction().map_err(storage_error)?;
+    let transaction = storage
+        .connection_mut()
+        .transaction()
+        .map_err(storage_error)?;
 
     for model in models {
         if model.id.trim().is_empty() {
             continue;
         }
-        let capabilities_json = serde_json::to_string(&model.capabilities).map_err(serialization_error)?;
+        let capabilities_json =
+            serde_json::to_string(&model.capabilities).map_err(serialization_error)?;
         let model_key = model_cache_key(&provider_id, &model.id);
         transaction
             .execute(
@@ -172,12 +176,13 @@ fn map_model_row(row: &rusqlite::Row<'_>, provider_id: &str) -> rusqlite::Result
         display_name: row.get(1)?,
         provider_id: provider_id.to_owned(),
         capabilities: serde_json::from_str(&capabilities_json).unwrap_or_default(),
-        context_window: row.get::<_, Option<i64>>(3)?.map(|value| value.max(0) as u64),
+        context_window: row
+            .get::<_, Option<i64>>(3)?
+            .map(|value| value.max(0) as u64),
         is_favorite: row.get::<_, i64>(4)? != 0,
         is_hidden: row.get::<_, i64>(5)? != 0,
         alias: row.get(6)?,
-        default_params: default_params_json
-            .and_then(|value| serde_json::from_str(&value).ok()),
+        default_params: default_params_json.and_then(|value| serde_json::from_str(&value).ok()),
     })
 }
 

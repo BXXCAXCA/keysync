@@ -3,6 +3,8 @@ dist/
 .vite/
 src-tauri/target/
 Cargo.lock
+!src-tauri/Cargo.lock
+src-tauri/gen/
 pnpm-lock.yaml
 .env
 .env.*

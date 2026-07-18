@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="KeySync AI">
+  <rect width="512" height="512" rx="112" fill="#111827"/>
+  <path d="M148 256a108 108 0 1 1 205 45l-38-17a66 66 0 1 0 0-56l38-17A108 108 0 0 1 148 256Z" fill="#60a5fa"/>
+  <path d="M270 256h118l30 30-30 30h-32v42h-42v-42h-44z" fill="#f8fafc"/>
+  <circle cx="230" cy="256" r="24" fill="#f8fafc"/>
+</svg>

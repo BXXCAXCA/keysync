@@ -79,7 +79,9 @@ pub fn list_conversations(
         )
         .map_err(storage_error)?;
 
-    let rows = statement.query_map([], map_summary_row).map_err(storage_error)?;
+    let rows = statement
+        .query_map([], map_summary_row)
+        .map_err(storage_error)?;
 
     let mut conversations = Vec::new();
     for row in rows {
@@ -138,7 +140,10 @@ pub fn save_conversation(
     })?;
 
     {
-        let transaction = service.connection_mut().transaction().map_err(storage_error)?;
+        let transaction = service
+            .connection_mut()
+            .transaction()
+            .map_err(storage_error)?;
         transaction
             .execute(
                 "INSERT INTO conversations (id, title, provider_id, model_id, system_prompt, params_json, created_at, updated_at) \
@@ -177,7 +182,11 @@ pub fn save_conversation(
                 continue;
             }
 
-            let message_id = match message.id.as_deref().filter(|value| !value.trim().is_empty()) {
+            let message_id = match message
+                .id
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+            {
                 Some(value) => Uuid::parse_str(value)
                     .map_err(|err| {
                         ErrorPayload::from(KeySyncError::Storage(format!(
@@ -291,7 +300,8 @@ fn load_conversation_detail(
 
 fn map_summary_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ConversationSummary> {
     let params_json: String = row.get(5)?;
-    let params = serde_json::from_str(&params_json).unwrap_or_else(|_| Value::Object(Default::default()));
+    let params =
+        serde_json::from_str(&params_json).unwrap_or_else(|_| Value::Object(Default::default()));
     let message_count: i64 = row.get(8)?;
     Ok(ConversationSummary {
         id: row.get(0)?,
@@ -321,9 +331,7 @@ fn local_db_path(app: &tauri::AppHandle) -> std::result::Result<PathBuf, ErrorPa
 
 fn parse_uuid(value: &str, label: &str) -> std::result::Result<Uuid, ErrorPayload> {
     Uuid::parse_str(value).map_err(|err| {
-        ErrorPayload::from(KeySyncError::Storage(format!(
-            "invalid {label} id: {err}"
-        )))
+        ErrorPayload::from(KeySyncError::Storage(format!("invalid {label} id: {err}")))
     })
 }
 

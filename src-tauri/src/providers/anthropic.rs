@@ -4,7 +4,10 @@ use std::time::Instant;
 
 use crate::errors::{KeySyncError, Result};
 use crate::providers::http::{build_client, join_url, parse_error_response};
-use crate::providers::{ChatStreamEvent, ModelInfo, ProviderAdapter, ProviderConfig, ProviderKind, TestResult, UnifiedChatRequest};
+use crate::providers::{
+    ChatStreamEvent, ModelInfo, ProviderAdapter, ProviderConfig, ProviderKind, TestResult,
+    UnifiedChatRequest,
+};
 
 pub struct AnthropicAdapter;
 
@@ -17,7 +20,9 @@ const DEFAULT_CLAUDE_MODELS: &[&str] = &[
 
 #[async_trait]
 impl ProviderAdapter for AnthropicAdapter {
-    fn kind(&self) -> ProviderKind { ProviderKind::AnthropicClaude }
+    fn kind(&self) -> ProviderKind {
+        ProviderKind::AnthropicClaude
+    }
 
     async fn list_models(&self, config: &ProviderConfig, _api_key: &str) -> Result<Vec<ModelInfo>> {
         Ok(DEFAULT_CLAUDE_MODELS
@@ -36,16 +41,28 @@ impl ProviderAdapter for AnthropicAdapter {
             .collect())
     }
 
-    async fn test_key(&self, config: &ProviderConfig, api_key: &str, model: Option<&str>) -> Result<TestResult> {
+    async fn test_key(
+        &self,
+        config: &ProviderConfig,
+        api_key: &str,
+        model: Option<&str>,
+    ) -> Result<TestResult> {
         let started = Instant::now();
         let models = self.list_models(config, api_key).await?;
         let selected_model = model
             .map(str::to_owned)
             .or_else(|| models.first().map(|item| item.id.clone()))
-            .ok_or_else(|| KeySyncError::Provider("Claude model list is empty; cannot run minimal request".into()))?;
+            .ok_or_else(|| {
+                KeySyncError::Provider(
+                    "Claude model list is empty; cannot run minimal request".into(),
+                )
+            })?;
 
         let response = build_client(config.proxy_url.as_deref())?
-            .post(join_url(&config.base_url, config.chat_path.as_deref().or(Some("/messages"))))
+            .post(join_url(
+                &config.base_url,
+                config.chat_path.as_deref().or(Some("/messages")),
+            ))
             .header("x-api-key", api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
             .json(&json!({
@@ -59,7 +76,9 @@ impl ProviderAdapter for AnthropicAdapter {
             }))
             .send()
             .await
-            .map_err(|err| KeySyncError::Network(format!("Anthropic minimal Messages request failed: {err}")))?;
+            .map_err(|err| {
+                KeySyncError::Network(format!("Anthropic minimal Messages request failed: {err}"))
+            })?;
 
         if !response.status().is_success() {
             return Err(parse_error_response(response, "Anthropic minimal Messages request").await);
@@ -75,10 +94,20 @@ impl ProviderAdapter for AnthropicAdapter {
         })
     }
 
-    async fn chat_stream(&self, _config: &ProviderConfig, _api_key: &str, _request: UnifiedChatRequest) -> Result<Vec<ChatStreamEvent>> {
+    async fn chat_stream(
+        &self,
+        _config: &ProviderConfig,
+        _api_key: &str,
+        _request: UnifiedChatRequest,
+    ) -> Result<Vec<ChatStreamEvent>> {
         Ok(vec![
             ChatStreamEvent::Start,
-            ChatStreamEvent::Error { code: "not_implemented".into(), message: "Anthropic streaming will be implemented after minimal Messages verification".into() },
+            ChatStreamEvent::Error {
+                code: "not_implemented".into(),
+                message:
+                    "Anthropic streaming will be implemented after minimal Messages verification"
+                        .into(),
+            },
         ])
     }
 }

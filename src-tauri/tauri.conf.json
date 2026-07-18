@@ -24,6 +24,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
     "category": "DeveloperTool",
     "shortDescription": "LLM API key manager and lightweight chat client",
     "longDescription": "KeySync AI stores LLM API keys securely, tests providers, syncs encrypted configuration through WebDAV, and provides lightweight chat."

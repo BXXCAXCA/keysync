@@ -53,7 +53,8 @@ pub fn load_app_settings(app: tauri::AppHandle) -> std::result::Result<AppSettin
     }
 
     let data_key = fixed_data_key(&keychain::load_data_key().map_err(ErrorPayload::from)?)?;
-    let envelope = crypto::envelope_from_string(&encrypted.encrypted_payload).map_err(ErrorPayload::from)?;
+    let envelope =
+        crypto::envelope_from_string(&encrypted.encrypted_payload).map_err(ErrorPayload::from)?;
     let plaintext = crypto::open_with_data_key(&data_key, &envelope).map_err(ErrorPayload::from)?;
     serde_json::from_slice(&plaintext).map_err(|error| {
         ErrorPayload::from(KeySyncError::Storage(format!(
@@ -73,7 +74,8 @@ pub fn save_app_settings(
             "serialize local settings: {error}"
         )))
     })?;
-    let data_key = fixed_data_key(&keychain::load_or_create_data_key().map_err(ErrorPayload::from)?)?;
+    let data_key =
+        fixed_data_key(&keychain::load_or_create_data_key().map_err(ErrorPayload::from)?)?;
     let envelope = crypto::seal_with_data_key(&data_key, &plaintext).map_err(ErrorPayload::from)?;
     let encrypted = EncryptedSettingsFile {
         version: 1,
@@ -137,16 +139,12 @@ fn normalize_settings(mut settings: AppSettings) -> AppSettings {
             (!provider_id.is_empty()).then(|| provider_id.to_owned())
         })
         .collect();
-    settings.custom_provider_templates = settings
-        .custom_provider_templates
-        .into_iter()
-        .filter(|template| {
-            !template.id.trim().is_empty()
-                && !template.name.trim().is_empty()
-                && !template.base_url.trim().is_empty()
-                && template.editable
-        })
-        .collect();
+    settings.custom_provider_templates.retain(|template| {
+        !template.id.trim().is_empty()
+            && !template.name.trim().is_empty()
+            && !template.base_url.trim().is_empty()
+            && template.editable
+    });
     settings
 }
 

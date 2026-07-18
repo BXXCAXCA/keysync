@@ -59,7 +59,6 @@ jobs:
   rust-quality:
     name: Rust fmt and clippy
     runs-on: ubuntu-24.04
-    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4

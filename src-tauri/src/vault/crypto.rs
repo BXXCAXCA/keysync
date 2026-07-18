@@ -43,7 +43,10 @@ pub fn generate_data_key() -> [u8; DATA_KEY_LEN] {
     key
 }
 
-pub fn seal_with_data_key(data_key: &[u8; DATA_KEY_LEN], plaintext: &[u8]) -> Result<VaultEnvelope> {
+pub fn seal_with_data_key(
+    data_key: &[u8; DATA_KEY_LEN],
+    plaintext: &[u8],
+) -> Result<VaultEnvelope> {
     let mut nonce = [0_u8; NONCE_LEN];
     OsRng.fill_bytes(&mut nonce);
     let cipher = XChaCha20Poly1305::new_from_slice(data_key)
@@ -61,7 +64,10 @@ pub fn seal_with_data_key(data_key: &[u8; DATA_KEY_LEN], plaintext: &[u8]) -> Re
     })
 }
 
-pub fn open_with_data_key(data_key: &[u8; DATA_KEY_LEN], envelope: &VaultEnvelope) -> Result<Vec<u8>> {
+pub fn open_with_data_key(
+    data_key: &[u8; DATA_KEY_LEN],
+    envelope: &VaultEnvelope,
+) -> Result<Vec<u8>> {
     ensure_algorithm(envelope)?;
     let nonce = decode_fixed::<NONCE_LEN>(&envelope.nonce, "nonce")?;
     let ciphertext = STANDARD
@@ -77,7 +83,13 @@ pub fn open_with_data_key(data_key: &[u8; DATA_KEY_LEN], envelope: &VaultEnvelop
 pub fn seal_with_master_password(master_password: &str, plaintext: &[u8]) -> Result<VaultEnvelope> {
     let mut salt = [0_u8; SALT_LEN];
     OsRng.fill_bytes(&mut salt);
-    let mut data_key = derive_key(master_password, &salt, KDF_MEMORY_KIB, KDF_ITERATIONS, KDF_PARALLELISM)?;
+    let mut data_key = derive_key(
+        master_password,
+        &salt,
+        KDF_MEMORY_KIB,
+        KDF_ITERATIONS,
+        KDF_PARALLELISM,
+    )?;
     let mut envelope = seal_with_data_key(&data_key, plaintext)?;
     data_key.zeroize();
     envelope.kdf = Some(KdfEnvelope {
@@ -90,31 +102,50 @@ pub fn seal_with_master_password(master_password: &str, plaintext: &[u8]) -> Res
     Ok(envelope)
 }
 
-pub fn open_with_master_password(master_password: &str, envelope: &VaultEnvelope) -> Result<Vec<u8>> {
-    let kdf = envelope
-        .kdf
-        .as_ref()
-        .ok_or_else(|| KeySyncError::Vault("vault envelope does not include KDF parameters".into()))?;
+pub fn open_with_master_password(
+    master_password: &str,
+    envelope: &VaultEnvelope,
+) -> Result<Vec<u8>> {
+    let kdf = envelope.kdf.as_ref().ok_or_else(|| {
+        KeySyncError::Vault("vault envelope does not include KDF parameters".into())
+    })?;
     if kdf.algorithm != "Argon2id" {
-        return Err(KeySyncError::Vault(format!("unsupported KDF: {}", kdf.algorithm)));
+        return Err(KeySyncError::Vault(format!(
+            "unsupported KDF: {}",
+            kdf.algorithm
+        )));
     }
 
     let salt = decode_fixed::<SALT_LEN>(&kdf.salt, "salt")?;
-    let mut data_key = derive_key(master_password, &salt, kdf.memory_kib, kdf.iterations, kdf.parallelism)?;
+    let mut data_key = derive_key(
+        master_password,
+        &salt,
+        kdf.memory_kib,
+        kdf.iterations,
+        kdf.parallelism,
+    )?;
     let result = open_with_data_key(&data_key, envelope);
     data_key.zeroize();
     result
 }
 
 pub fn envelope_to_string(envelope: &VaultEnvelope) -> Result<String> {
-    serde_json::to_string(envelope).map_err(|err| KeySyncError::Vault(format!("failed to serialize vault envelope: {err}")))
+    serde_json::to_string(envelope)
+        .map_err(|err| KeySyncError::Vault(format!("failed to serialize vault envelope: {err}")))
 }
 
 pub fn envelope_from_string(serialized: &str) -> Result<VaultEnvelope> {
-    serde_json::from_str(serialized).map_err(|err| KeySyncError::Vault(format!("failed to parse vault envelope: {err}")))
+    serde_json::from_str(serialized)
+        .map_err(|err| KeySyncError::Vault(format!("failed to parse vault envelope: {err}")))
 }
 
-fn derive_key(master_password: &str, salt: &[u8; SALT_LEN], memory_kib: u32, iterations: u32, parallelism: u32) -> Result<[u8; DATA_KEY_LEN]> {
+fn derive_key(
+    master_password: &str,
+    salt: &[u8; SALT_LEN],
+    memory_kib: u32,
+    iterations: u32,
+    parallelism: u32,
+) -> Result<[u8; DATA_KEY_LEN]> {
     let params = Params::new(memory_kib, iterations, parallelism, Some(DATA_KEY_LEN))
         .map_err(|err| KeySyncError::Vault(format!("invalid Argon2id parameters: {err}")))?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
@@ -127,10 +158,16 @@ fn derive_key(master_password: &str, salt: &[u8; SALT_LEN], memory_kib: u32, ite
 
 fn ensure_algorithm(envelope: &VaultEnvelope) -> Result<()> {
     if envelope.version != 1 {
-        return Err(KeySyncError::Vault(format!("unsupported vault envelope version: {}", envelope.version)));
+        return Err(KeySyncError::Vault(format!(
+            "unsupported vault envelope version: {}",
+            envelope.version
+        )));
     }
     if envelope.algorithm != "XChaCha20-Poly1305" {
-        return Err(KeySyncError::Vault(format!("unsupported vault algorithm: {}", envelope.algorithm)));
+        return Err(KeySyncError::Vault(format!(
+            "unsupported vault algorithm: {}",
+            envelope.algorithm
+        )));
     }
     Ok(())
 }
@@ -150,8 +187,10 @@ mod tests {
 
     #[test]
     fn master_password_roundtrip() {
-        let envelope = seal_with_master_password("correct horse battery staple", b"secret-api-key").unwrap();
-        let plaintext = open_with_master_password("correct horse battery staple", &envelope).unwrap();
+        let envelope =
+            seal_with_master_password("correct horse battery staple", b"secret-api-key").unwrap();
+        let plaintext =
+            open_with_master_password("correct horse battery staple", &envelope).unwrap();
         assert_eq!(plaintext, b"secret-api-key");
     }
 

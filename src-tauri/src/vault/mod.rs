@@ -65,15 +65,31 @@ pub struct VaultFile {
 
 pub struct VaultService;
 
-impl VaultService {
-    pub fn new() -> Self { Self }
+impl Default for VaultService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
-    pub fn encrypt_for_sync_with_master_password(&self, master_password: &str, plaintext: &[u8]) -> Result<String> {
+impl VaultService {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn encrypt_for_sync_with_master_password(
+        &self,
+        master_password: &str,
+        plaintext: &[u8],
+    ) -> Result<String> {
         let envelope = crypto::seal_with_master_password(master_password, plaintext)?;
         crypto::envelope_to_string(&envelope)
     }
 
-    pub fn decrypt_from_sync_with_master_password(&self, master_password: &str, ciphertext: &str) -> Result<Vec<u8>> {
+    pub fn decrypt_from_sync_with_master_password(
+        &self,
+        master_password: &str,
+        ciphertext: &str,
+    ) -> Result<Vec<u8>> {
         let envelope = crypto::envelope_from_string(ciphertext)?;
         crypto::open_with_master_password(master_password, &envelope)
     }
@@ -86,19 +102,39 @@ impl VaultService {
         store::save(path, vault_file)
     }
 
-    pub fn create_secret_record_with_master_password(&self, provider_id: String, display_name: String, payload: SecretPayload, master_password: &str) -> Result<SecretRecord> {
+    pub fn create_secret_record_with_master_password(
+        &self,
+        provider_id: String,
+        display_name: String,
+        payload: SecretPayload,
+        master_password: &str,
+    ) -> Result<SecretRecord> {
         store::create_record(provider_id, display_name, payload, master_password)
     }
 
-    pub fn decrypt_secret_record_with_master_password(&self, record: &SecretRecord, master_password: &str) -> Result<SecretPayload> {
+    pub fn decrypt_secret_record_with_master_password(
+        &self,
+        record: &SecretRecord,
+        master_password: &str,
+    ) -> Result<SecretPayload> {
         store::decrypt_record(record, master_password)
     }
 
-    pub fn create_secret_record_with_data_key(&self, provider_id: String, display_name: String, payload: SecretPayload, data_key: &[u8]) -> Result<SecretRecord> {
+    pub fn create_secret_record_with_data_key(
+        &self,
+        provider_id: String,
+        display_name: String,
+        payload: SecretPayload,
+        data_key: &[u8],
+    ) -> Result<SecretRecord> {
         store::create_record_with_data_key(provider_id, display_name, payload, data_key)
     }
 
-    pub fn decrypt_secret_record_with_data_key(&self, record: &SecretRecord, data_key: &[u8]) -> Result<SecretPayload> {
+    pub fn decrypt_secret_record_with_data_key(
+        &self,
+        record: &SecretRecord,
+        data_key: &[u8],
+    ) -> Result<SecretPayload> {
         store::decrypt_record_with_data_key(record, data_key)
     }
 }

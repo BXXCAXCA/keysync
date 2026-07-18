@@ -112,7 +112,7 @@ The repository has GitHub Actions CI configured in `.github/workflows/ci.yml`:
 - `Rust cargo check`
 - `Rust fmt and clippy` as non-blocking quality job
 
-Verified locally on 2026-07-18: `npm run build` passed after installing the frontend dependencies and committing `package-lock.json`. Rust/Cargo is not installed in this environment, so Rust compile/format/Clippy status remains unknown. Previous workflow/status checks often returned no run records through the available connector wrapper.
+Verified locally on 2026-07-18 after installing Rust stable: `npm run build`, `cargo check`, `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test` all passed. `npm run tauri -- build` also passed, producing MSI and NSIS Windows bundles. The only observed warning is the Windows linker’s informational import-library message during test/release linking.
 
 ## Important repository files
 
@@ -219,7 +219,6 @@ Verified locally on 2026-07-18: `npm run build` passed after installing the fron
 
 ## Known risks and open issues
 
-- Rust build/check has not been locally verified after the latest backend changes.
 - CI status may not be visible through the current connector wrapper; check Actions manually or with more specific workflow tools if available.
 - `src/App.tsx` is still large and should continue to be split.
 - WebDAV state/actions still live in `App.tsx`; only the WebDAV JSX has been extracted.
@@ -228,16 +227,14 @@ Verified locally on 2026-07-18: `npm run build` passed after installing the fron
 - Provider/model/model-params cards are still inline in `App.tsx`.
 - Conversation WebDAV sync is not implemented; WebDAV currently syncs encrypted vault data, not chat history, model preferences, or proxy settings.
 - Raw WebDAV upload/download remains single-device recovery only. Saved-profile sync now uses a master-password-protected transfer format and re-seals records with the receiving device's system keychain.
-- Rust compile/format/Clippy remain unverified locally.
 - `initialMessages` array is reused; cloning initial messages may be safer for future mutation-heavy changes.
 
 ## Suggested next tasks
 
-1. Verify Rust with `cargo check --manifest-path src-tauri/Cargo.toml` when the toolchain is available.
-2. Add settings/model preference WebDAV sync with ETag/revision/device metadata.
-3. Add optional conversation-history sync only after the encrypted transfer model is complete.
-4. Add clipboard auto-clear and optional OS verification before exposing plaintext credentials.
-5. Extract `useWebDavSync`, vault/keychain, conflict, provider, and model inspector components from `App.tsx`.
+1. Add settings/model preference WebDAV sync with ETag/revision/device metadata.
+2. Add optional conversation-history sync only after the encrypted transfer model is complete.
+3. Add clipboard auto-clear and optional OS verification before exposing plaintext credentials.
+4. Extract `useWebDavSync`, vault/keychain, conflict, provider, and model inspector components from `App.tsx`.
 
 ## Resume instruction for future agents
 

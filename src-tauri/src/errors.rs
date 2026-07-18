@@ -30,7 +30,10 @@ impl From<KeySyncError> for ErrorPayload {
             KeySyncError::Sync(_) => "sync_error",
             KeySyncError::Network(_) => "network_error",
         };
-        Self { code, message: value.to_string() }
+        Self {
+            code,
+            message: value.to_string(),
+        }
     }
 }
 

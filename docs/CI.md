@@ -43,14 +43,14 @@ This job is the first backend compilation gate and should be fixed before new fe
 
 ## Rust quality
 
-Formatting and Clippy run in a separate advisory job with `continue-on-error: true`:
+Formatting and Clippy run as a blocking quality job:
 
 ```bash
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 ```
 
-This keeps quality feedback visible without hiding the primary compile signal while the codebase is still being actively bootstrapped. Once the historical Rust files are rustfmt-clean and clippy-clean, remove `continue-on-error` so this job becomes blocking.
+The Rust source is rustfmt-clean and Clippy-clean with warnings denied, so quality regressions now block merging.
 
 Cargo dependency caching is enabled with `Swatinem/rust-cache` for the `src-tauri` workspace in both Rust jobs.
 
@@ -86,7 +86,7 @@ Because recent work touched both the frontend and backend, the first useful CI r
 - Rust formatting differences after large command modules were added.
 - Clippy warnings in SQLite persistence helpers.
 
-Fix blocking jobs first: `Frontend build` and `Rust cargo check`. Treat `Rust fmt and clippy` as cleanup until it is made blocking.
+Fix the first failing blocking job: `Frontend build`, `Rust cargo check`, or `Rust fmt and clippy`.
 
 ## Notes
 

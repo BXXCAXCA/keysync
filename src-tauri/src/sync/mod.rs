@@ -46,12 +46,18 @@ impl WebDavSyncService {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(45))
             .build()
-            .map_err(|err| KeySyncError::Network(format!("failed to build WebDAV client: {err}")))?;
+            .map_err(|err| {
+                KeySyncError::Network(format!("failed to build WebDAV client: {err}"))
+            })?;
         Ok(Self { client })
     }
 
     pub fn remote_paths() -> Vec<&'static str> {
-        vec!["/KeySyncAI/vault.sync.json.enc", "/KeySyncAI/settings.sync.json.enc", "/KeySyncAI/history.sync.json.enc"]
+        vec![
+            "/KeySyncAI/vault.sync.json.enc",
+            "/KeySyncAI/settings.sync.json.enc",
+            "/KeySyncAI/history.sync.json.enc",
+        ]
     }
 
     pub async fn test_connection(&self, config: &WebDavConfig) -> Result<WebDavSyncResult> {
@@ -65,7 +71,9 @@ impl WebDavSyncService {
             .header("Depth", "0")
             .send()
             .await
-            .map_err(|err| KeySyncError::Network(format!("WebDAV connection test failed: {err}")))?;
+            .map_err(|err| {
+                KeySyncError::Network(format!("WebDAV connection test failed: {err}"))
+            })?;
 
         if !response.status().is_success() && response.status().as_u16() != 207 {
             return Err(webdav_error(response, "connection test").await);
@@ -80,7 +88,11 @@ impl WebDavSyncService {
         })
     }
 
-    pub async fn upload_vault(&self, config: &WebDavConfig, content: Vec<u8>) -> Result<WebDavSyncResult> {
+    pub async fn upload_vault(
+        &self,
+        config: &WebDavConfig,
+        content: Vec<u8>,
+    ) -> Result<WebDavSyncResult> {
         let dir_url = remote_dir_url(config);
         self.ensure_remote_dir(config, &dir_url).await?;
         let url = remote_file_url(config, "vault.sync.json.enc");
@@ -107,7 +119,10 @@ impl WebDavSyncService {
         })
     }
 
-    pub async fn download_vault(&self, config: &WebDavConfig) -> Result<(WebDavSyncResult, Vec<u8>)> {
+    pub async fn download_vault(
+        &self,
+        config: &WebDavConfig,
+    ) -> Result<(WebDavSyncResult, Vec<u8>)> {
         let url = remote_file_url(config, "vault.sync.json.enc");
         let response = self
             .client
@@ -124,22 +139,32 @@ impl WebDavSyncService {
         let content = response
             .bytes()
             .await
-            .map_err(|err| KeySyncError::Network(format!("failed to read WebDAV download body: {err}")))?
+            .map_err(|err| {
+                KeySyncError::Network(format!("failed to read WebDAV download body: {err}"))
+            })?
             .to_vec();
 
-        Ok((WebDavSyncResult {
-            ok: true,
-            operation: "download_vault".into(),
-            remote_url: url,
-            bytes: content.len(),
-            message: "Encrypted vault downloaded".into(),
-        }, content))
+        Ok((
+            WebDavSyncResult {
+                ok: true,
+                operation: "download_vault".into(),
+                remote_url: url,
+                bytes: content.len(),
+                message: "Encrypted vault downloaded".into(),
+            },
+            content,
+        ))
     }
 
     async fn ensure_remote_dir(&self, config: &WebDavConfig, dir_url: &str) -> Result<()> {
         let response = self
             .client
-            .request(Method::from_bytes(b"MKCOL").map_err(|err| KeySyncError::Sync(format!("failed to build MKCOL method: {err}")))?, dir_url)
+            .request(
+                Method::from_bytes(b"MKCOL").map_err(|err| {
+                    KeySyncError::Sync(format!("failed to build MKCOL method: {err}"))
+                })?,
+                dir_url,
+            )
             .basic_auth(&config.username, Some(&config.password))
             .send()
             .await

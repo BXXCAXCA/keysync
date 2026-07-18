@@ -8,5 +8,8 @@ pub struct AppStatus {
 
 #[tauri::command]
 pub fn app_status() -> AppStatus {
-    AppStatus { name: "KeySync AI", phase: "bootstrap skeleton" }
+    AppStatus {
+        name: "KeySync AI",
+        phase: "bootstrap skeleton",
+    }
 }

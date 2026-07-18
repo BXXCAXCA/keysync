@@ -55,10 +55,14 @@ impl StorageService {
         if version < 2 {
             self.connection
                 .execute_batch(include_str!("../../migrations/0002_message_sequence.sql"))
-                .map_err(|err| KeySyncError::Storage(format!("add message sequence migration: {err}")))?;
+                .map_err(|err| {
+                    KeySyncError::Storage(format!("add message sequence migration: {err}"))
+                })?;
             self.connection
                 .execute_batch("PRAGMA user_version = 2")
-                .map_err(|err| KeySyncError::Storage(format!("record message sequence migration: {err}")))?;
+                .map_err(|err| {
+                    KeySyncError::Storage(format!("record message sequence migration: {err}"))
+                })?;
         }
         Ok(())
     }

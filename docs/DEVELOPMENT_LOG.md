@@ -8,7 +8,7 @@ This file records the implementation history captured from the ChatGPT developme
 - Branch: `main`
 - User continuation command: `继续`
 - Preferred workflow: make small focused commits, document assumptions, avoid repeated confirmation questions when the next step is clear.
-- Verification caveat: the frontend build is verified locally; Rust checks remain unverified until a Cargo toolchain is available.
+- Verification caveat: validation claims must always name the exact command that was observed.
 
 ## Foundation
 
@@ -107,22 +107,22 @@ Still inline in `src/App.tsx`:
 
 ## Verification status
 
-Verified locally on 2026-07-18:
+Verified locally on 2026-07-18 after installing Rust stable:
 
 - `npm run build` — passed (`tsc && vite build`).
+- `cargo check --manifest-path src-tauri/Cargo.toml` — passed.
+- `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check` — passed.
+- `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` — passed.
+- `cargo test --manifest-path src-tauri/Cargo.toml` — passed (5 tests).
+- `npm run tauri -- build` — passed and produced Windows MSI and NSIS bundles.
 
-Still unverified because this environment has no Rust/Cargo toolchain:
-
-- `cargo check --manifest-path src-tauri/Cargo.toml`
-- `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`
-- `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings`
+The Windows linker emits an informational `linker_messages` warning while creating import libraries; it does not fail compilation, Clippy, tests, or bundling.
 
 Previous workflow/status checks through the available connector returned no useful run records.
 
 ## Current next-step queue
 
-1. Verify Rust build, formatting, and Clippy when a local toolchain or actionable CI log is available.
-2. Sync encrypted settings/model preferences with revision and device metadata.
-3. Add optional encrypted conversation-history sync after the transfer format is complete.
-4. Add clipboard auto-clear and optional OS verification before exposing plaintext credentials.
-5. Extract `useWebDavSync` and remaining inspector components from `App.tsx`.
+1. Sync encrypted settings/model preferences with revision and device metadata.
+2. Add optional encrypted conversation-history sync after the transfer format is complete.
+3. Add clipboard auto-clear and optional OS verification before exposing plaintext credentials.
+4. Extract `useWebDavSync` and remaining inspector components from `App.tsx`.

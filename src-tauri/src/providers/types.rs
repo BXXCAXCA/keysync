@@ -34,7 +34,18 @@ pub struct ProviderTemplate {
 
 impl ProviderTemplate {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(id: &str, name: &str, kind: ProviderKind, base_url: &str, models_path: Option<&str>, chat_path: Option<&str>, responses_path: Option<&str>, supports_streaming: bool, supports_images: bool, editable: bool) -> Self {
+    pub fn new(
+        id: &str,
+        name: &str,
+        kind: ProviderKind,
+        base_url: &str,
+        models_path: Option<&str>,
+        chat_path: Option<&str>,
+        responses_path: Option<&str>,
+        supports_streaming: bool,
+        supports_images: bool,
+        editable: bool,
+    ) -> Self {
         Self {
             id: id.to_owned(),
             name: name.to_owned(),
@@ -119,10 +130,18 @@ pub struct UnifiedChatRequest {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChatStreamEvent {
     Start,
-    Delta { text: String },
-    Usage { input_tokens: Option<u64>, output_tokens: Option<u64> },
+    Delta {
+        text: String,
+    },
+    Usage {
+        input_tokens: Option<u64>,
+        output_tokens: Option<u64>,
+    },
     Done,
-    Error { code: String, message: String },
+    Error {
+        code: String,
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,7 +160,21 @@ pub struct ChatStartResult {
 #[async_trait]
 pub trait ProviderAdapter: Send + Sync {
     fn kind(&self) -> ProviderKind;
-    async fn list_models(&self, config: &ProviderConfig, api_key: &str) -> crate::errors::Result<Vec<ModelInfo>>;
-    async fn test_key(&self, config: &ProviderConfig, api_key: &str, model: Option<&str>) -> crate::errors::Result<TestResult>;
-    async fn chat_stream(&self, config: &ProviderConfig, api_key: &str, request: UnifiedChatRequest) -> crate::errors::Result<Vec<ChatStreamEvent>>;
+    async fn list_models(
+        &self,
+        config: &ProviderConfig,
+        api_key: &str,
+    ) -> crate::errors::Result<Vec<ModelInfo>>;
+    async fn test_key(
+        &self,
+        config: &ProviderConfig,
+        api_key: &str,
+        model: Option<&str>,
+    ) -> crate::errors::Result<TestResult>;
+    async fn chat_stream(
+        &self,
+        config: &ProviderConfig,
+        api_key: &str,
+        request: UnifiedChatRequest,
+    ) -> crate::errors::Result<Vec<ChatStreamEvent>>;
 }

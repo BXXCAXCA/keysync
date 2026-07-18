@@ -5,7 +5,10 @@ use std::time::Instant;
 
 use crate::errors::{KeySyncError, Result};
 use crate::providers::http::{build_client, join_url, parse_error_response};
-use crate::providers::{ChatStreamEvent, ModelInfo, ProviderAdapter, ProviderConfig, ProviderKind, TestResult, UnifiedChatRequest};
+use crate::providers::{
+    ChatStreamEvent, ModelInfo, ProviderAdapter, ProviderConfig, ProviderKind, TestResult,
+    UnifiedChatRequest,
+};
 
 pub struct GeminiAdapter;
 
@@ -26,17 +29,24 @@ struct GeminiModel {
 
 #[async_trait]
 impl ProviderAdapter for GeminiAdapter {
-    fn kind(&self) -> ProviderKind { ProviderKind::GoogleGemini }
+    fn kind(&self) -> ProviderKind {
+        ProviderKind::GoogleGemini
+    }
 
     async fn list_models(&self, config: &ProviderConfig, api_key: &str) -> Result<Vec<ModelInfo>> {
         let client = build_client(config.proxy_url.as_deref())?;
-        let url = join_url(&config.base_url, config.models_path.as_deref().or(Some("/models")));
+        let url = join_url(
+            &config.base_url,
+            config.models_path.as_deref().or(Some("/models")),
+        );
         let response = client
             .get(url)
             .header("x-goog-api-key", api_key)
             .send()
             .await
-            .map_err(|err| KeySyncError::Network(format!("Gemini model list request failed: {err}")))?;
+            .map_err(|err| {
+                KeySyncError::Network(format!("Gemini model list request failed: {err}"))
+            })?;
 
         if !response.status().is_success() {
             return Err(parse_error_response(response, "Gemini model list").await);
@@ -45,19 +55,39 @@ impl ProviderAdapter for GeminiAdapter {
         let payload = response
             .json::<GeminiModelsResponse>()
             .await
-            .map_err(|err| KeySyncError::Provider(format!("failed to parse Gemini model list: {err}")))?;
+            .map_err(|err| {
+                KeySyncError::Provider(format!("failed to parse Gemini model list: {err}"))
+            })?;
 
-        Ok(payload.models.into_iter().map(|model| gemini_model_info(&config.id, model)).collect())
+        Ok(payload
+            .models
+            .into_iter()
+            .map(|model| gemini_model_info(&config.id, model))
+            .collect())
     }
 
-    async fn test_key(&self, config: &ProviderConfig, api_key: &str, model: Option<&str>) -> Result<TestResult> {
+    async fn test_key(
+        &self,
+        config: &ProviderConfig,
+        api_key: &str,
+        model: Option<&str>,
+    ) -> Result<TestResult> {
         let started = Instant::now();
         let models = self.list_models(config, api_key).await?;
         let selected_model = model
             .map(str::to_owned)
-            .or_else(|| models.iter().find(|item| item.capabilities.iter().any(|cap| cap == "chat")).map(|item| item.id.clone()))
+            .or_else(|| {
+                models
+                    .iter()
+                    .find(|item| item.capabilities.iter().any(|cap| cap == "chat"))
+                    .map(|item| item.id.clone())
+            })
             .or_else(|| models.first().map(|item| item.id.clone()))
-            .ok_or_else(|| KeySyncError::Provider("Gemini model list is empty; cannot run minimal request".into()))?;
+            .ok_or_else(|| {
+                KeySyncError::Provider(
+                    "Gemini model list is empty; cannot run minimal request".into(),
+                )
+            })?;
 
         let response = build_client(config.proxy_url.as_deref())?
             .post(gemini_generate_url(config, &selected_model))
@@ -74,10 +104,16 @@ impl ProviderAdapter for GeminiAdapter {
             }))
             .send()
             .await
-            .map_err(|err| KeySyncError::Network(format!("Gemini minimal generateContent request failed: {err}")))?;
+            .map_err(|err| {
+                KeySyncError::Network(format!(
+                    "Gemini minimal generateContent request failed: {err}"
+                ))
+            })?;
 
         if !response.status().is_success() {
-            return Err(parse_error_response(response, "Gemini minimal generateContent request").await);
+            return Err(
+                parse_error_response(response, "Gemini minimal generateContent request").await,
+            );
         }
 
         Ok(TestResult {
@@ -86,14 +122,25 @@ impl ProviderAdapter for GeminiAdapter {
             model_count: Some(models.len()),
             selected_model: Some(selected_model),
             latency_ms: Some(started.elapsed().as_millis() as u64),
-            message: "Gemini API key, model list, and minimal generateContent request succeeded".into(),
+            message: "Gemini API key, model list, and minimal generateContent request succeeded"
+                .into(),
         })
     }
 
-    async fn chat_stream(&self, _config: &ProviderConfig, _api_key: &str, _request: UnifiedChatRequest) -> Result<Vec<ChatStreamEvent>> {
+    async fn chat_stream(
+        &self,
+        _config: &ProviderConfig,
+        _api_key: &str,
+        _request: UnifiedChatRequest,
+    ) -> Result<Vec<ChatStreamEvent>> {
         Ok(vec![
             ChatStreamEvent::Start,
-            ChatStreamEvent::Error { code: "not_implemented".into(), message: "Gemini streaming will be implemented after non-streaming adapter verification".into() },
+            ChatStreamEvent::Error {
+                code: "not_implemented".into(),
+                message:
+                    "Gemini streaming will be implemented after non-streaming adapter verification"
+                        .into(),
+            },
         ])
     }
 }
@@ -107,10 +154,16 @@ fn gemini_model_info(provider_id: &str, model: GeminiModel) -> ModelInfo {
     if methods.iter().any(|method| method == "generateContent") {
         capabilities.push("chat".to_owned());
     }
-    if methods.iter().any(|method| method == "embedContent" || method == "batchEmbedContents") {
+    if methods
+        .iter()
+        .any(|method| method == "embedContent" || method == "batchEmbedContents")
+    {
         capabilities.push("embedding".to_owned());
     }
-    if id.to_lowercase().contains("vision") || display_name.to_lowercase().contains("vision") || id.to_lowercase().contains("gemini") {
+    if id.to_lowercase().contains("vision")
+        || display_name.to_lowercase().contains("vision")
+        || id.to_lowercase().contains("gemini")
+    {
         capabilities.push("vision".to_owned());
     }
     if capabilities.is_empty() {

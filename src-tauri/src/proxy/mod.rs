@@ -19,6 +19,9 @@ pub struct ProxyConfig {
     pub password_secret_id: Option<String>,
 }
 
-pub fn resolve_proxy(provider_proxy: Option<ProxyConfig>, global_proxy: Option<ProxyConfig>) -> Option<ProxyConfig> {
+pub fn resolve_proxy(
+    provider_proxy: Option<ProxyConfig>,
+    global_proxy: Option<ProxyConfig>,
+) -> Option<ProxyConfig> {
     provider_proxy.or(global_proxy)
 }
