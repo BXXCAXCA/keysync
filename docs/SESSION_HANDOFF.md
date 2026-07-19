@@ -87,6 +87,8 @@ The frontend is still centered around `src/App.tsx`, but several reusable pieces
 
 The current desktop UI is Simplified Chinese by default. Product names, API/model identifiers, URLs, and the explicit `EXPORT` confirmation token remain unchanged where they are protocol values.
 
+The credential panel can copy an unlocked API key to the clipboard and clears it after 30 seconds; the copy action requires the same system-keychain or legacy master-password unlock path as credential testing.
+
 ### Backend
 
 Rust/Tauri backend currently includes:

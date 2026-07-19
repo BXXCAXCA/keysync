@@ -39,6 +39,7 @@ Provider support is organized around a unified adapter approach. Current and pla
 - Added encrypted backup import/export and confirmation-gated plaintext JSON migration backup flows.
 - Added master-password-encrypted WebDAV settings transfer for proxy settings, custom provider templates, and model preferences.
 - Added timestamp-aware model preference merge and Chinese UI actions for settings synchronization.
+- Added key copy through the unlock path with a 30-second clipboard auto-clear timer.
 
 ## Streaming chat
 

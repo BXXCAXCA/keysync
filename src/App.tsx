@@ -156,6 +156,7 @@ export default function App() {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const encryptedBackupInputRef = useRef<HTMLInputElement | null>(null);
   const plaintextBackupInputRef = useRef<HTMLInputElement | null>(null);
+  const clipboardClearTimerRef = useRef<number | null>(null);
   const chatMessagesRef = useRef<ChatMessage[]>(initialMessages);
   const currentConversationIdRef = useRef<string | null>(null);
   const activeProviderIdRef = useRef(activeProviderId);
@@ -190,9 +191,15 @@ export default function App() {
     currentConversationIdRef.current = currentConversationId;
   });
 
+  useEffect(() => () => {
+    if (clipboardClearTimerRef.current !== null) {
+      window.clearTimeout(clipboardClearTimerRef.current);
+    }
+  }, []);
+
   useEffect(() => {
     loadProviderTemplates().then(setTemplates);
-    getAppStatus().then(setStatus);
+    getAppStatus().then((value) => setStatus(value === "bootstrap skeleton" ? "就绪" : value));
     reloadVaultRecords();
     reloadSavedWebDavSummary();
     reloadSystemKeychainStatus();
@@ -678,13 +685,13 @@ export default function App() {
       return await unlockCredentialWithSystemKeychain(selectedSecretId);
     } catch (systemError) {
       if (!masterPassword) {
-        setTestResult({ ok: false, providerId: activeProvider.id, message: `System keychain unlock failed: ${errorMessage(systemError)}. Enter master password for legacy records.` });
+        setTestResult({ ok: false, providerId: activeProvider.id, message: `系统钥匙串解锁失败：${errorMessage(systemError)}。旧记录请输入主密码。` });
         return null;
       }
       try {
         return await vaultDecryptSecretWithMasterPassword(selectedSecretId, masterPassword);
       } catch (masterError) {
-        setTestResult({ ok: false, providerId: activeProvider.id, message: `Unlock failed. System: ${errorMessage(systemError)} Master: ${errorMessage(masterError)}` });
+        setTestResult({ ok: false, providerId: activeProvider.id, message: `解锁失败。系统钥匙串：${errorMessage(systemError)}；主密码：${errorMessage(masterError)}` });
         return null;
       }
     } finally {
@@ -701,7 +708,7 @@ export default function App() {
       const cachedModels = await saveModelCache(activeProvider.id, result);
       setModels(cachedModels);
       setSelectedModel(cachedModels.find((model) => !model.isHidden)?.id ?? cachedModels[0]?.id ?? "");
-      setTestResult({ ok: true, providerId: activeProvider.id, modelCount: cachedModels.length, message: `Fetched ${cachedModels.length} models.` });
+      setTestResult({ ok: true, providerId: activeProvider.id, modelCount: cachedModels.length, message: `已拉取 ${cachedModels.length} 个模型。` });
     } catch (error) {
       setTestResult({ ok: false, providerId: activeProvider.id, message: errorMessage(error) });
     } finally {
@@ -720,6 +727,28 @@ export default function App() {
       setTestResult({ ok: false, providerId: activeProvider.id, message: errorMessage(error) });
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleCopySelectedKey() {
+    if (!selectedSecretId) return;
+    try {
+      const payload = await unlockSelectedSecret();
+      if (!payload?.apiKey) return;
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("当前环境不支持安全剪贴板访问。");
+      }
+      await navigator.clipboard.writeText(payload.apiKey);
+      if (clipboardClearTimerRef.current !== null) {
+        window.clearTimeout(clipboardClearTimerRef.current);
+      }
+      clipboardClearTimerRef.current = window.setTimeout(() => {
+        void navigator.clipboard.writeText("").catch(() => undefined);
+        clipboardClearTimerRef.current = null;
+      }, 30_000);
+      setTestResult(activeProvider ? { ok: true, providerId: activeProvider.id, message: "密钥已复制，30 秒后将自动清空剪贴板。" } : null);
+    } catch (error) {
+      setTestResult(activeProvider ? { ok: false, providerId: activeProvider.id, message: `复制密钥失败：${errorMessage(error)}` } : null);
     }
   }
 
@@ -758,7 +787,7 @@ export default function App() {
       setAppSettings(saved);
       setSyncMessage("已使用系统钥匙串数据密钥保存代理设置。");
     } catch (error) {
-      setSyncMessage(`Proxy settings failed: ${errorMessage(error)}`);
+      setSyncMessage(`代理设置保存失败：${errorMessage(error)}`);
     }
   }
 
@@ -779,7 +808,7 @@ export default function App() {
       setTemplates(await loadProviderTemplates());
       setActiveProviderId(template.id);
       setCustomProviderJson("");
-      setTestResult({ ok: true, providerId: template.id, message: `Saved custom provider ${template.name}.` });
+      setTestResult({ ok: true, providerId: template.id, message: `已保存自定义服务商：${template.name}。` });
     } catch (error) {
       setTestResult(activeProvider ? { ok: false, providerId: activeProvider.id, message: errorMessage(error) } : null);
     }
@@ -802,7 +831,7 @@ export default function App() {
     try {
       const record = await vaultMigrateSecretToSystemKeychain(selectedSecretId, masterPassword);
       await reloadVaultRecords();
-      setTestResult({ ok: true, providerId: activeProvider.id, message: `Migrated ${record.displayName} to the system keychain.` });
+      setTestResult({ ok: true, providerId: activeProvider.id, message: `已将 ${record.displayName} 迁移至系统钥匙串。` });
     } catch (error) {
       setTestResult({ ok: false, providerId: activeProvider.id, message: errorMessage(error) });
     } finally {
@@ -837,7 +866,7 @@ export default function App() {
           : selectedModelInfo.defaultParams,
       });
       setModels((current) => current.map((model) => (model.id === updated.id ? updated : model)));
-      setTestResult({ ok: true, providerId: activeProvider.id, message: `Saved preferences for ${updated.displayName}.` });
+      setTestResult({ ok: true, providerId: activeProvider.id, message: `已保存 ${updated.displayName} 的模型偏好。` });
     } catch (error) {
       setTestResult({ ok: false, providerId: activeProvider.id, message: errorMessage(error) });
     }
@@ -897,7 +926,7 @@ export default function App() {
       </section>
 
       <aside className="inspector">
-        <section className="card"><h2><KeyRound size={16} /> API 密钥库</h2><p>新记录使用系统钥匙串数据密钥保存。仅旧记录、迁移或 WebDAV 配置需要主密码。</p><label>主密码<input type="password" value={masterPassword} onChange={(event) => setMasterPassword(event.target.value)} placeholder="用于旧记录或 WebDAV 配置" /></label><label>已保存密钥<select value={selectedSecretId} onChange={(event) => setSelectedSecretId(event.target.value)}><option value="">选择已保存密钥</option>{providerSecrets.map((secret) => <option key={secret.id} value={secret.id}>{secret.displayName}</option>)}</select></label><div className="button-row"><button onClick={handleListModelsWithSavedKey} disabled={busy || !selectedSecretId}>拉取模型</button><button className="primary" onClick={handleTestProviderWithSavedKey} disabled={busy || !selectedSecretId}>测试密钥</button></div><button className="secondary full" onClick={handleMigrateSavedKey} disabled={busy || !selectedSecretId || !masterPassword}>将旧密钥迁移至系统钥匙串</button><button className="danger" onClick={handleDeleteSavedKey} disabled={busy || !selectedSecretId}>删除已保存密钥</button>{testResult && <p className={testResult.ok ? "ok" : "warn"}>{testResult.message}</p>}</section>
+        <section className="card"><h2><KeyRound size={16} /> API 密钥库</h2><p>新记录使用系统钥匙串数据密钥保存。仅旧记录、迁移或 WebDAV 配置需要主密码。</p><label>主密码<input type="password" value={masterPassword} onChange={(event) => setMasterPassword(event.target.value)} placeholder="用于旧记录或 WebDAV 配置" /></label><label>已保存密钥<select value={selectedSecretId} onChange={(event) => setSelectedSecretId(event.target.value)}><option value="">选择已保存密钥</option>{providerSecrets.map((secret) => <option key={secret.id} value={secret.id}>{secret.displayName}</option>)}</select></label><div className="button-row"><button onClick={handleListModelsWithSavedKey} disabled={busy || !selectedSecretId}>拉取模型</button><button className="primary" onClick={handleTestProviderWithSavedKey} disabled={busy || !selectedSecretId}>测试密钥</button></div><div className="button-row"><button className="secondary" onClick={() => void handleCopySelectedKey()} disabled={busy || !selectedSecretId}>复制密钥（30 秒自动清除）</button><button className="secondary" onClick={handleMigrateSavedKey} disabled={busy || !selectedSecretId || !masterPassword}>迁移至系统钥匙串</button></div><button className="danger" onClick={handleDeleteSavedKey} disabled={busy || !selectedSecretId}>删除已保存密钥</button>{testResult && <p className={testResult.ok ? "ok" : "warn"}>{testResult.message}</p>}</section>
         <section className="card"><h2>备份</h2><p>加密备份会保留加密记录。明文导出受到刻意限制，仅建议用于迁移。</p><input ref={encryptedBackupInputRef} type="file" accept="application/json,.json" hidden onChange={(event) => void handleImportBackup(event.target.files, "encrypted")} /><input ref={plaintextBackupInputRef} type="file" accept="application/json,.json" hidden onChange={(event) => void handleImportBackup(event.target.files, "plaintext")} /><div className="button-row"><button onClick={() => void handleExportEncryptedBackup()} disabled={busy}>导出加密备份</button><button onClick={() => encryptedBackupInputRef.current?.click()} disabled={busy}>导入加密备份</button></div><label>输入 EXPORT 以允许明文导出<input value={plaintextExportConfirmation} onChange={(event) => setPlaintextExportConfirmation(event.target.value)} placeholder="EXPORT" /></label><div className="button-row"><button className="danger inline" onClick={() => void handleExportPlaintextBackup()} disabled={busy || plaintextExportConfirmation !== "EXPORT"}>导出明文 JSON</button><button onClick={() => plaintextBackupInputRef.current?.click()} disabled={busy}>导入明文 JSON</button></div></section>
         <section className="card"><h2>系统钥匙串</h2><p>默认密钥库模式使用操作系统钥匙串数据密钥保护新记录。只要仍有记录依赖该密钥，就不能将其删除。</p>{keychainStatus && <p className={keychainStatus.available ? "ok" : "warn"}>{keychainStatus.message}</p>}<dl><dt>服务</dt><dd>{keychainStatus?.service ?? "app.keysync.ai"}</dd><dt>账户</dt><dd>{keychainStatus?.account ?? "vault-data-key"}</dd><dt>数据密钥</dt><dd>{keychainStatus?.hasDataKey ? "已存在" : "缺失"}</dd></dl><div className="button-row"><button onClick={reloadSystemKeychainStatus} disabled={busy}>刷新</button><button className="primary" onClick={handleInitSystemKeychain} disabled={busy}>初始化数据密钥</button></div><button className="danger" onClick={handleDeleteSystemKeychain} disabled={busy || !keychainStatus?.hasDataKey}>删除数据密钥</button></section>
         <section className="card"><h2>保存新密钥</h2><label>显示名称<input value={keyName} onChange={(event) => setKeyName(event.target.value)} placeholder="个人 OpenAI 密钥" /></label><label>API 密钥<input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-… 或服务商令牌" /></label><div className="button-row"><button onClick={handleListModelsWithRawKey} disabled={busy || !apiKey.trim()}>拉取模型</button><button onClick={handleTestProviderWithRawKey} disabled={busy || !apiKey.trim()}>测试当前密钥</button></div><button className="primary full" onClick={handleSaveKey} disabled={busy || !apiKey.trim()}>使用系统钥匙串保存</button><button className="secondary full" onClick={handleSaveKeyWithMasterPassword} disabled={busy || !apiKey.trim() || !masterPassword}>使用主密码保存</button></section>
