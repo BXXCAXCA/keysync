@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
+use crate::commands::models::{self, ModelPreferenceRecord};
+use crate::commands::settings::{self, AppSettings};
 use crate::errors::{ErrorPayload, KeySyncError};
 use crate::sync::{WebDavConfig, WebDavSyncResult, WebDavSyncService};
 use crate::vault::{keychain, store, SecretRecord, VaultService};
@@ -11,6 +13,7 @@ use uuid::Uuid;
 
 const LOCAL_VAULT_FILE: &str = "vault.local.json";
 const WEBDAV_CONFIG_FILE: &str = "webdav.config.json";
+const SETTINGS_SYNC_FILE: &str = "settings.sync.json.enc";
 const LOCAL_DEVICE_ID: &str = "local-device";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,6 +23,22 @@ struct SyncTransferVault {
     device_id: String,
     updated_at: chrono::DateTime<chrono::Utc>,
     records: Vec<SecretRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncSettingsPayload {
+    settings: AppSettings,
+    model_preferences: Vec<ModelPreferenceRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncTransferSettings {
+    version: u32,
+    device_id: String,
+    updated_at: chrono::DateTime<chrono::Utc>,
+    encrypted_payload: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -185,6 +204,58 @@ pub async fn webdav_download_remote_vault_with_saved_config(
     download_remote_vault_with_config(&app, &config, overwrite, Some(&master_password)).await
 }
 
+#[tauri::command]
+pub async fn webdav_upload_settings_with_saved_config(
+    app: tauri::AppHandle,
+    master_password: String,
+) -> std::result::Result<WebDavSyncResult, ErrorPayload> {
+    let config = webdav_unlock_saved_config(app.clone(), master_password.clone())?;
+    let content = serialize_transfer_settings(&app, &master_password)?;
+    WebDavSyncService::new()
+        .map_err(ErrorPayload::from)?
+        .upload_file(&config, SETTINGS_SYNC_FILE, content.into_bytes())
+        .await
+        .map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub async fn webdav_download_settings_with_saved_config(
+    app: tauri::AppHandle,
+    master_password: String,
+) -> std::result::Result<WebDavSyncResult, ErrorPayload> {
+    let config = webdav_unlock_saved_config(app.clone(), master_password.clone())?;
+    let (mut result, content) = WebDavSyncService::new()
+        .map_err(ErrorPayload::from)?
+        .download_file(&config, SETTINGS_SYNC_FILE)
+        .await
+        .map_err(ErrorPayload::from)?;
+    let remote: SyncTransferSettings = serde_json::from_slice(&content).map_err(|error| {
+        ErrorPayload::from(KeySyncError::Sync(format!(
+            "parse encrypted settings transfer: {error}"
+        )))
+    })?;
+    if remote.version != 1 {
+        return Err(ErrorPayload::from(KeySyncError::Sync(
+            "unsupported settings transfer version".into(),
+        )));
+    }
+    let plaintext = VaultService::new()
+        .decrypt_from_sync_with_master_password(&master_password, &remote.encrypted_payload)
+        .map_err(ErrorPayload::from)?;
+    let payload: SyncSettingsPayload = serde_json::from_slice(&plaintext).map_err(|error| {
+        ErrorPayload::from(KeySyncError::Sync(format!(
+            "parse decrypted settings transfer: {error}"
+        )))
+    })?;
+    settings::merge_app_settings(&app, payload.settings)?;
+    let changed_models = models::import_model_preferences(&app, &payload.model_preferences)?;
+    result.message = format!(
+        "Settings merged; {} model preferences updated",
+        changed_models
+    );
+    Ok(result)
+}
+
 async fn upload_local_vault_with_config(
     app: &tauri::AppHandle,
     config: &WebDavConfig,
@@ -327,6 +398,40 @@ fn serialize_transfer_vault(
     .map_err(|error| {
         ErrorPayload::from(KeySyncError::Sync(format!(
             "serialize sync transfer: {error}"
+        )))
+    })
+}
+
+fn serialize_transfer_settings(
+    app: &tauri::AppHandle,
+    master_password: &str,
+) -> std::result::Result<String, ErrorPayload> {
+    if master_password.is_empty() {
+        return Err(ErrorPayload::from(KeySyncError::Sync(
+            "master password is required for settings sync".into(),
+        )));
+    }
+    let payload = SyncSettingsPayload {
+        settings: settings::load_app_settings(app.clone())?,
+        model_preferences: models::export_model_preferences(app)?,
+    };
+    let plaintext = serde_json::to_vec(&payload).map_err(|error| {
+        ErrorPayload::from(KeySyncError::Sync(format!(
+            "serialize settings transfer: {error}"
+        )))
+    })?;
+    let encrypted_payload = VaultService::new()
+        .encrypt_for_sync_with_master_password(master_password, &plaintext)
+        .map_err(ErrorPayload::from)?;
+    serde_json::to_string_pretty(&SyncTransferSettings {
+        version: 1,
+        device_id: LOCAL_DEVICE_ID.to_owned(),
+        updated_at: chrono::Utc::now(),
+        encrypted_payload,
+    })
+    .map_err(|error| {
+        ErrorPayload::from(KeySyncError::Sync(format!(
+            "serialize encrypted settings transfer: {error}"
         )))
     })
 }

@@ -156,6 +156,69 @@ impl WebDavSyncService {
         ))
     }
 
+    pub async fn upload_file(
+        &self,
+        config: &WebDavConfig,
+        filename: &str,
+        content: Vec<u8>,
+    ) -> Result<WebDavSyncResult> {
+        let dir_url = remote_dir_url(config);
+        self.ensure_remote_dir(config, &dir_url).await?;
+        let url = remote_file_url(config, filename);
+        let bytes = content.len();
+        let response = self
+            .client
+            .put(&url)
+            .basic_auth(&config.username, Some(&config.password))
+            .body(content)
+            .send()
+            .await
+            .map_err(|err| KeySyncError::Network(format!("WebDAV upload failed: {err}")))?;
+        if !response.status().is_success() {
+            return Err(webdav_error(response, "file upload").await);
+        }
+        Ok(WebDavSyncResult {
+            ok: true,
+            operation: format!("upload_{filename}"),
+            remote_url: url,
+            bytes,
+            message: format!("Encrypted {filename} uploaded"),
+        })
+    }
+
+    pub async fn download_file(
+        &self,
+        config: &WebDavConfig,
+        filename: &str,
+    ) -> Result<(WebDavSyncResult, Vec<u8>)> {
+        let url = remote_file_url(config, filename);
+        let response = self
+            .client
+            .get(&url)
+            .basic_auth(&config.username, Some(&config.password))
+            .send()
+            .await
+            .map_err(|err| KeySyncError::Network(format!("WebDAV download failed: {err}")))?;
+        if !response.status().is_success() {
+            return Err(webdav_error(response, "file download").await);
+        }
+        let content = response
+            .bytes()
+            .await
+            .map_err(|err| KeySyncError::Network(format!("failed to read WebDAV file: {err}")))?
+            .to_vec();
+        Ok((
+            WebDavSyncResult {
+                ok: true,
+                operation: format!("download_{filename}"),
+                remote_url: url,
+                bytes: content.len(),
+                message: format!("Encrypted {filename} downloaded"),
+            },
+            content,
+        ))
+    }
+
     async fn ensure_remote_dir(&self, config: &WebDavConfig, dir_url: &str) -> Result<()> {
         let response = self
             .client

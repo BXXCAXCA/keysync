@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use rusqlite::{params, OptionalExtension};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::Manager;
 
@@ -20,6 +20,99 @@ pub struct UpdateModelPreferencesInput {
     pub is_hidden: bool,
     pub alias: Option<String>,
     pub default_params: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelPreferenceRecord {
+    pub provider_id: String,
+    pub model_id: String,
+    pub is_favorite: bool,
+    pub is_hidden: bool,
+    pub alias: Option<String>,
+    pub default_params: Option<Value>,
+    pub updated_at: String,
+}
+
+pub fn export_model_preferences(
+    app: &tauri::AppHandle,
+) -> std::result::Result<Vec<ModelPreferenceRecord>, ErrorPayload> {
+    let storage = open_storage(app)?;
+    let mut statement = storage
+        .connection()
+        .prepare(
+            "SELECT provider_id, model_id, is_favorite, is_hidden, alias, default_params_json, updated_at
+             FROM model_cache
+             WHERE is_favorite != 0 OR is_hidden != 0 OR alias IS NOT NULL OR default_params_json IS NOT NULL",
+        )
+        .map_err(storage_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            let default_params_json: Option<String> = row.get(5)?;
+            Ok(ModelPreferenceRecord {
+                provider_id: row.get(0)?,
+                model_id: row.get(1)?,
+                is_favorite: row.get::<_, i64>(2)? != 0,
+                is_hidden: row.get::<_, i64>(3)? != 0,
+                alias: row.get(4)?,
+                default_params: default_params_json
+                    .and_then(|value| serde_json::from_str(&value).ok()),
+                updated_at: row.get(6)?,
+            })
+        })
+        .map_err(storage_error)?;
+    rows.map(|row| row.map_err(storage_error)).collect()
+}
+
+pub fn import_model_preferences(
+    app: &tauri::AppHandle,
+    preferences: &[ModelPreferenceRecord],
+) -> std::result::Result<usize, ErrorPayload> {
+    let mut storage = open_storage(app)?;
+    let transaction = storage
+        .connection_mut()
+        .transaction()
+        .map_err(storage_error)?;
+    let mut changed = 0;
+    for preference in preferences {
+        if preference.provider_id.trim().is_empty() || preference.model_id.trim().is_empty() {
+            continue;
+        }
+        let default_params_json = preference
+            .default_params
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(serialization_error)?;
+        let model_key = model_cache_key(&preference.provider_id, &preference.model_id);
+        let affected = transaction
+            .execute(
+                "INSERT INTO model_cache
+                    (id, provider_id, model_id, display_name, capabilities_json, context_window, is_favorite, is_hidden, alias, default_params_json, updated_at)
+                 VALUES (?1, ?2, ?3, ?3, '[]', NULL, ?4, ?5, ?6, ?7, ?8)
+                 ON CONFLICT(id) DO UPDATE SET
+                    is_favorite = excluded.is_favorite,
+                    is_hidden = excluded.is_hidden,
+                    alias = excluded.alias,
+                    default_params_json = excluded.default_params_json,
+                    updated_at = excluded.updated_at
+                 WHERE excluded.updated_at >= model_cache.updated_at",
+                params![
+                    model_key,
+                    preference.provider_id.trim(),
+                    preference.model_id.trim(),
+                    if preference.is_favorite { 1_i64 } else { 0_i64 },
+                    if preference.is_hidden { 1_i64 } else { 0_i64 },
+                    preference.alias.as_deref().filter(|value| !value.trim().is_empty()),
+                    default_params_json,
+                    preference.updated_at,
+                ],
+            )
+            .map_err(storage_error)?;
+        changed += affected;
+    }
+    transaction.commit().map_err(storage_error)?;
+    Ok(changed)
 }
 
 #[tauri::command]

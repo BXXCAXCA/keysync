@@ -37,6 +37,8 @@ Provider support is organized around a unified adapter approach. Current and pla
 - Added conflict review behavior for remote copies.
 - Added encrypted global/provider proxy settings and wired their resolved URL into all Provider HTTP and streaming clients.
 - Added encrypted backup import/export and confirmation-gated plaintext JSON migration backup flows.
+- Added master-password-encrypted WebDAV settings transfer for proxy settings, custom provider templates, and model preferences.
+- Added timestamp-aware model preference merge and Chinese UI actions for settings synchronization.
 
 ## Streaming chat
 

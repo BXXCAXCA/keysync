@@ -117,6 +117,34 @@ pub fn has_encrypted_local_settings(
     Ok(local_settings_path(app)?.exists())
 }
 
+pub fn merge_app_settings(
+    app: &tauri::AppHandle,
+    remote: AppSettings,
+) -> std::result::Result<AppSettings, ErrorPayload> {
+    let mut merged = load_app_settings(app.clone())?;
+    if remote.global_proxy_url.is_some() {
+        merged.global_proxy_url = remote.global_proxy_url;
+    }
+    merged
+        .provider_proxy_urls
+        .extend(remote.provider_proxy_urls);
+    merged
+        .provider_proxy_disabled
+        .extend(remote.provider_proxy_disabled);
+    for remote_template in remote.custom_provider_templates {
+        if let Some(local_template) = merged
+            .custom_provider_templates
+            .iter_mut()
+            .find(|template| template.id == remote_template.id)
+        {
+            *local_template = remote_template;
+        } else {
+            merged.custom_provider_templates.push(remote_template);
+        }
+    }
+    save_app_settings(app.clone(), merged)
+}
+
 fn normalize_settings(mut settings: AppSettings) -> AppSettings {
     settings.global_proxy_url = settings
         .global_proxy_url

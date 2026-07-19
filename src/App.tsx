@@ -50,6 +50,8 @@ import {
   webdavUnlockSavedConfig,
   webdavUploadLocalVault,
   webdavUploadLocalVaultWithSavedConfig,
+  webdavUploadSettingsWithSavedConfig,
+  webdavDownloadSettingsWithSavedConfig,
 } from "./lib/tauri";
 
 type PendingImage = { name: string; mediaType: string; dataBase64: string };
@@ -721,6 +723,28 @@ export default function App() {
     }
   }
 
+  async function handleSavedWebDavSettingsUpload() {
+    if (!masterPassword) {
+      setSyncMessage("同步设置需要主密码。");
+      return;
+    }
+    await runWebDavAction(async () => webdavUploadSettingsWithSavedConfig(masterPassword));
+  }
+
+  async function handleSavedWebDavSettingsDownload() {
+    if (!masterPassword) {
+      setSyncMessage("同步设置需要主密码。");
+      return;
+    }
+    await runWebDavAction(async () => {
+      const result = await webdavDownloadSettingsWithSavedConfig(masterPassword);
+      const refreshed = await loadAppSettings();
+      setAppSettings(refreshed);
+      setModels(await listCachedModels(activeProviderId));
+      return result;
+    });
+  }
+
   function providerConfig(provider: ProviderTemplate) {
     const proxyUrl = appSettings.providerProxyDisabled.includes(provider.id)
       ? undefined
@@ -893,6 +917,8 @@ export default function App() {
           onUnlockSaved={handleUnlockSavedWebDavConfig}
           onUploadSaved={handleSavedWebDavUpload}
           onDownloadSaved={handleSavedWebDavDownload}
+          onUploadSettings={handleSavedWebDavSettingsUpload}
+          onDownloadSettings={handleSavedWebDavSettingsDownload}
         />
         {conflictRecords.length > 0 && <section className="card"><h2>冲突处理</h2><p>合并时已保留远端冲突副本。重命名即可保留，也可以删除重复副本。</p><div className="model-list">{conflictRecords.map((record) => <span key={record.id}>{record.displayName}<small>{record.providerId} · {record.updatedAt}</small><input value={conflictRename[record.id] ?? record.displayName.replace(" [conflict remote]", "")} onChange={(event) => setConflictRename({ ...conflictRename, [record.id]: event.target.value })} /><div className="button-row"><button onClick={() => void handleAcceptConflict(record)} disabled={busy}>保留并重命名</button><button className="danger" onClick={() => void deleteRecord(record.id, "已删除冲突副本。")} disabled={busy}>删除冲突副本</button></div></span>)}</div></section>}
         <section className="card"><h2>当前服务商</h2>{activeProvider ? <><dl><dt>名称</dt><dd>{activeProvider.name}</dd><dt>基础 URL</dt><dd>{activeProvider.baseUrl}</dd><dt>流式输出</dt><dd>{activeProvider.supportsStreaming ? "支持" : "不支持"}</dd><dt>图片输入</dt><dd>{activeProvider.supportsImages ? "支持" : "不支持"}</dd></dl>{activeProvider.editable && <button className="danger" onClick={() => void handleDeleteCustomProvider()}>删除自定义服务商</button>}</> : <p>尚未加载服务商。</p>}</section>

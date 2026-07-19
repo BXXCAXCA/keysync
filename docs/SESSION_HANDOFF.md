@@ -103,6 +103,7 @@ Rust/Tauri backend currently includes:
 - SQLite model cache and persisted model preferences
 - Encrypted local application settings for proxy configuration
 - Encrypted and confirmation-gated plaintext vault backup commands
+- Master-password-encrypted WebDAV settings/model-preference transfer commands
 
 Conversation saves are now atomic at the SQLite level: the conversation upsert, old message deletion, new message inserts, and commit run inside one transaction.
 

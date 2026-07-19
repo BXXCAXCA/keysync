@@ -17,6 +17,8 @@ interface WebDavSyncCardProps {
   onUnlockSaved: () => void | Promise<void>;
   onUploadSaved: () => void | Promise<void>;
   onDownloadSaved: () => void | Promise<void>;
+  onUploadSettings: () => void | Promise<void>;
+  onDownloadSettings: () => void | Promise<void>;
 }
 
 export function WebDavSyncCard({
@@ -34,6 +36,8 @@ export function WebDavSyncCard({
   onUnlockSaved,
   onUploadSaved,
   onDownloadSaved,
+  onUploadSettings,
+  onDownloadSettings,
 }: WebDavSyncCardProps) {
   return (
     <section className="card">
@@ -90,6 +94,10 @@ export function WebDavSyncCard({
         <button className="primary" onClick={onDownloadSaved} disabled={busy || !savedWebdavSummary || !masterPassword}>
           下载已保存密钥库并合并
         </button>
+      </div>
+      <div className="button-row">
+        <button onClick={onUploadSettings} disabled={busy || !savedWebdavSummary || !masterPassword}>上传设置与模型偏好</button>
+        <button onClick={onDownloadSettings} disabled={busy || !savedWebdavSummary || !masterPassword}>下载设置并合并</button>
       </div>
       {syncMessage && <p className="ok">{syncMessage}</p>}
     </section>

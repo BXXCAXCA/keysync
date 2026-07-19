@@ -2,7 +2,7 @@
 
 ## Status
 
-The MVP WebDAV sync layer now supports manual encrypted vault file operations, encrypted local storage for WebDAV credentials, basic record-level merge on download, and conflict review in the UI.
+The WebDAV sync layer supports manual encrypted vault file operations, encrypted local storage for WebDAV credentials, basic record-level merge on download, conflict review in the UI, and encrypted synchronization of application settings and model preferences.
 
 Implemented:
 
@@ -19,11 +19,12 @@ Implemented:
 - Encrypting the saved WebDAV password with the master-password vault envelope.
 - Loading saved WebDAV config summaries without exposing the password.
 - Unlocking saved WebDAV config with the master password for test/upload/download.
+- Uploading `settings.sync.json.enc` with proxy settings, custom provider templates, and non-default model preferences encrypted by the master password.
+- Downloading and merging settings/model preferences; model preference records use their timestamps so older remote values do not overwrite newer local values.
 
 Pending:
 
 - Sync metadata such as ETag, revision, and device ID.
-- Settings/model preference sync.
 - Optional conversation history sync.
 - Moving WebDAV config into a unified settings store.
 
@@ -40,6 +41,12 @@ The MVP uploads:
 
 ```text
 https://dav.example.com/remote.php/dav/files/user/KeySyncAI/vault.sync.json.enc
+```
+
+The settings action additionally uploads:
+
+```text
+https://dav.example.com/remote.php/dav/files/user/KeySyncAI/settings.sync.json.enc
 ```
 
 ## Merge behavior
@@ -87,3 +94,5 @@ The summary command returns endpoint, username, remote directory, and whether a 
 The synced vault file contains encrypted payloads only. Plaintext API keys are not written to the WebDAV file. WebDAV passwords are saved locally only as encrypted vault envelopes. Download merge keeps conflict copies instead of deleting or silently overwriting data.
 
 For actual multi-device use, select **Upload saved** / **Merge download saved** after saving the WebDAV profile with a master password. This path creates a transfer envelope whose records are protected by that master password; the original system-keychain encryption is never copied to another device. The receiver decrypts each transfer record with the master password and immediately seals it with its local system data key.
+
+For settings and model preferences, use **上传设置与模型偏好** / **下载设置并合并**. The entire settings payload is encrypted with the same master-password envelope; the receiver merges it into its local system-keychain-protected settings and applies model preferences by timestamp.

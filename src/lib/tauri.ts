@@ -220,3 +220,11 @@ export async function webdavUploadLocalVaultWithSavedConfig(masterPassword: stri
 export async function webdavDownloadRemoteVaultWithSavedConfig(masterPassword: string, overwrite: boolean): Promise<WebDavSyncResult> {
   return await invoke<WebDavSyncResult>("webdav_download_remote_vault_with_saved_config", { masterPassword, overwrite });
 }
+
+export async function webdavUploadSettingsWithSavedConfig(masterPassword: string): Promise<WebDavSyncResult> {
+  return await invoke<WebDavSyncResult>("webdav_upload_settings_with_saved_config", { masterPassword });
+}
+
+export async function webdavDownloadSettingsWithSavedConfig(masterPassword: string): Promise<WebDavSyncResult> {
+  return await invoke<WebDavSyncResult>("webdav_download_settings_with_saved_config", { masterPassword });
+}
